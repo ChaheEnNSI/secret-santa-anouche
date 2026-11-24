@@ -1,7 +1,9 @@
-// Secret Santa : interface.
+// Secret Santa : parcours et mise en scène.
+import { startSnow, overlay, sound, reduceMotion } from './fx.js';
+
 const $ = (sel) => document.querySelector(sel);
-const reduceMotion = window.matchMedia('(prefers-reduced-motion: reduce)').matches;
 const wait = (ms) => new Promise((r) => setTimeout(r, ms));
+const rand = (a, b) => a + Math.random() * (b - a);
 
 // ---------- Stockage local (protégé : certains navigateurs le bloquent) ----------
 const store = {
@@ -27,35 +29,22 @@ async function api(path, { method = 'GET', body } = {}) {
   return data;
 }
 
-// ---------- État ----------
-const state = {
-  people: [],
-  event: null,
-  selected: null,
-  reveal: null, // { name, target, myWishlist, targetWishlist }
-  opening: false,
-};
+const state = { people: [], event: null, selected: null, reveal: null, opening: false };
 
 // ---------- Navigation entre écrans ----------
-const screens = {
-  home: $('#screen-home'),
-  question: $('#screen-question'),
-  gift: $('#screen-gift'),
-};
+const screens = { home: $('#screen-home'), question: $('#screen-question'), gift: $('#screen-gift') };
 let current = 'home';
 
 function show(name, { push = true, animate = true } = {}) {
   if (name === current && !screens[name].hidden) return;
-  const swap = () => {
-    Object.entries(screens).forEach(([key, el]) => { el.hidden = key !== name; });
-    screens[name].classList.remove('is-entering');
-    void screens[name].offsetWidth;
-    if (!reduceMotion && animate) screens[name].classList.add('is-entering');
-    window.scrollTo({ top: 0 });
-  };
-  swap();
+  Object.entries(screens).forEach(([key, el]) => { el.hidden = key !== name; });
+  screens[name].classList.remove('is-entering');
+  void screens[name].offsetWidth;
+  if (!reduceMotion && animate) screens[name].classList.add('is-entering');
+  window.scrollTo({ top: 0 });
   if (push) { try { history.pushState({ screen: name }, ''); } catch { /* cadre restreint */ } }
   current = name;
+  if (name === 'gift') startGiftLoop();
 }
 
 window.addEventListener('popstate', (e) => {
@@ -64,10 +53,41 @@ window.addEventListener('popstate', (e) => {
   else show(target, { push: false });
 });
 
-// ---------- Guirlande ----------
-const BULB_COLORS = ['#f2c14e', '#e5484d', '#fff4dc', '#57b98a'];
+// ---------- Décor : étoiles et relief ----------
+(function makeStars() {
+  const box = $('#stars');
+  const n = window.innerWidth < 600 ? 55 : 90;
+  let html = '';
+  for (let i = 0; i < n; i++) {
+    const s = rand(1, 2.4).toFixed(1);
+    html += `<i style="left:${rand(0, 100).toFixed(2)}%;top:${rand(0, 100).toFixed(2)}%;width:${s}px;height:${s}px;animation-delay:${rand(-4, 0).toFixed(2)}s;animation-duration:${rand(2.4, 5).toFixed(2)}s"></i>`;
+  }
+  box.innerHTML = html;
+})();
 
-function drawGarland(litNames = new Set()) {
+const root = document.documentElement;
+let scrollRaf = 0;
+let lastScroll = window.scrollY;
+window.addEventListener('scroll', () => {
+  if (scrollRaf) return;
+  scrollRaf = requestAnimationFrame(() => {
+    scrollRaf = 0;
+    const y = window.scrollY;
+    root.style.setProperty('--sc', y.toFixed(0));
+    kickTags((y - lastScroll) * 0.05);
+    lastScroll = y;
+  });
+}, { passive: true });
+window.addEventListener('pointermove', (e) => {
+  if (e.pointerType !== 'mouse') return;
+  root.style.setProperty('--px', ((e.clientX / window.innerWidth - 0.5) * 2).toFixed(3));
+}, { passive: true });
+
+// ---------- Guirlande : une ampoule par participant ----------
+const BULB_COLORS = ['#f2c14e', '#e5484d', '#fff4dc', '#57b98a'];
+const litNames = () => new Set(state.people.filter((p) => p.revealed).map((p) => p.name));
+
+function drawGarland(lit = new Set()) {
   const svg = $('#garland');
   const w = Math.max(320, window.innerWidth);
   const h = svg.getBoundingClientRect().height || 84;
@@ -76,55 +96,41 @@ function drawGarland(litNames = new Set()) {
   const sag = h * 0.42;
   const top = 6;
   const wire = `M -10 ${top} Q ${w * 0.25} ${top + sag * 2} ${w * 0.5} ${top + 4} Q ${w * 0.75} ${top + sag * 2} ${w + 10} ${top}`;
-  svg.innerHTML = `
-    <defs><filter id="halo" x="-100%" y="-100%" width="300%" height="300%"><feGaussianBlur stdDeviation="6"/></filter></defs>
-    <path class="garland__wire" d="${wire}"/>`;
+  svg.innerHTML = `<defs><filter id="halo" x="-100%" y="-100%" width="300%" height="300%"><feGaussianBlur stdDeviation="6"/></filter></defs><path class="garland__wire" d="${wire}"/>`;
   const path = svg.querySelector('path');
   const total = path.getTotalLength();
   const margin = total * 0.05;
   const step = (total - margin * 2) / (n - 1);
-  const frag = [];
+  let html = '';
   for (let i = 0; i < n; i++) {
     const p = path.getPointAtLength(margin + step * i);
     const person = state.people[i];
-    const lit = person && litNames.has(person.name);
-    const color = BULB_COLORS[i % BULB_COLORS.length];
-    frag.push(`
-      <g class="bulb${lit ? ' is-lit' : ''}" data-index="${i}" style="--c:${color};--d:${(i * 0.37) % 2.2}s" transform="translate(${p.x.toFixed(1)} ${p.y.toFixed(1)})">
-        <circle class="bulb__halo" cx="0" cy="14" r="13" filter="url(#halo)"/>
-        <rect class="bulb__cap" x="-3.5" y="0" width="7" height="6" rx="1.5"/>
-        <path class="bulb__glass" d="M0 5 C 6 7, 7 16, 0 23 C -7 16, -6 7, 0 5 Z"/>
-      </g>`);
+    const on = person && lit.has(person.name);
+    html += `<g class="bulb${on ? ' is-lit' : ''}" data-index="${i}" style="--c:${BULB_COLORS[i % 4]};--d:${((i * 0.37) % 2.2).toFixed(2)}s" transform="translate(${p.x.toFixed(1)} ${p.y.toFixed(1)})"><circle class="bulb__halo" cx="0" cy="14" r="13" filter="url(#halo)"/><rect class="bulb__cap" x="-3.5" y="0" width="7" height="6" rx="1.5"/><path class="bulb__glass" d="M0 5 C 6 7, 7 16, 0 23 C -7 16, -6 7, 0 5 Z"/></g>`;
   }
-  svg.insertAdjacentHTML('beforeend', frag.join(''));
+  svg.insertAdjacentHTML('beforeend', html);
 }
 
-// Allume les ampoules une à une au chargement (une par personne ayant déjà tiré).
 async function lightGarland() {
-  const lit = new Set(state.people.filter((p) => p.revealed).map((p) => p.name));
+  const lit = litNames();
   drawGarland(new Set());
   if (reduceMotion) { drawGarland(lit); return; }
-  await wait(500);
-  const bulbs = [...document.querySelectorAll('.bulb')];
-  for (const bulb of bulbs) {
+  await wait(700);
+  for (const bulb of document.querySelectorAll('.bulb')) {
     const person = state.people[Number(bulb.dataset.index)];
-    if (person && lit.has(person.name)) {
-      bulb.classList.add('is-lit');
-      await wait(140);
-    }
+    if (person && lit.has(person.name)) { bulb.classList.add('is-lit'); await wait(150); }
   }
 }
 
 let resizeTimer;
 window.addEventListener('resize', () => {
   clearTimeout(resizeTimer);
-  resizeTimer = setTimeout(() => drawGarland(new Set(state.people.filter((p) => p.revealed).map((p) => p.name))), 150);
+  resizeTimer = setTimeout(() => drawGarland(litNames()), 150);
 });
 
 // ---------- Accueil ----------
 function parisToday() {
-  const parts = new Intl.DateTimeFormat('fr-CA', { timeZone: 'Europe/Paris', year: 'numeric', month: '2-digit', day: '2-digit' }).format(new Date());
-  return parts; // AAAA-MM-JJ
+  return new Intl.DateTimeFormat('fr-CA', { timeZone: 'Europe/Paris', year: 'numeric', month: '2-digit', day: '2-digit' }).format(new Date());
 }
 
 function renderCountdown() {
@@ -133,30 +139,58 @@ function renderCountdown() {
   const [ty, tm, td] = parisToday().split('-').map(Number);
   const days = Math.round((Date.UTC(y, m - 1, d) - Date.UTC(ty, tm - 1, td)) / 86400000);
   $('#date-label').textContent = state.event.label;
-  $('#countdown').textContent =
-    days > 1 ? `Plus que ${days} jours` :
-    days === 1 ? 'C\'est demain !' :
-    days === 0 ? 'C\'est aujourd\'hui !' : 'C\'était le 20 décembre';
+  $('#countdown').textContent = days > 1 ? `Plus que ${days} jours` : days === 1 ? 'C\'est demain !' : days === 0 ? 'C\'est aujourd\'hui !' : 'C\'était le 20 décembre';
 }
 
 function renderProgress() {
   const total = state.people.length;
   const done = state.people.filter((p) => p.revealed).length;
   $('#progress').textContent =
-    done === 0 ? 'Personne n\'a encore découvert son nom. À toi de commencer !' :
-    done === total ? 'Tout le monde a découvert son nom. Rendez-vous le 20 décembre !' :
-    done === 1 ? `1 sur ${total} a déjà découvert son nom.` :
-    `${done} sur ${total} ont déjà découvert leur nom.`;
+    done === 0 ? 'Personne n\'a encore pioché. À toi de commencer !' :
+    done === total ? 'Tout le monde a pioché. Rendez-vous le 20 décembre !' :
+    done === 1 ? `1 sur ${total} a déjà pioché.` : `${done} sur ${total} ont déjà pioché.`;
 }
 
+// Étiquettes suspendues : petit moteur de balancier (ressort amorti).
 const STAR = '<svg viewBox="0 0 24 24" aria-hidden="true"><path d="M12 2.5l2.9 6.1 6.6.8-4.9 4.6 1.3 6.6L12 17.3l-5.9 3.3 1.3-6.6-4.9-4.6 6.6-.8z"/></svg>';
+let swings = [];
+let swingRaf = 0;
+let swingLast = 0;
 
-function renderTags() {
+function swingStep(now) {
+  const dt = Math.min(48, now - swingLast) / 16.67;
+  swingLast = now;
+  let moving = false;
+  for (const s of swings) {
+    s.v += (-0.012 * (s.a - s.base) - 0.045 * s.v) * dt;
+    s.a += s.v * dt;
+    s.a = Math.max(-35, Math.min(35, s.a));
+    s.el.style.transform = `rotate(${s.a.toFixed(2)}deg)`;
+    if (Math.abs(s.a - s.base) > 0.05 || Math.abs(s.v) > 0.01) moving = true;
+  }
+  swingRaf = moving ? requestAnimationFrame(swingStep) : 0;
+}
+function runSwings() {
+  if (reduceMotion || swingRaf) return;
+  swingLast = performance.now();
+  swingRaf = requestAnimationFrame(swingStep);
+}
+function kickTags(amount) {
+  if (!swings.length || current !== 'home' || !amount) return;
+  swings.forEach((s, i) => { s.v += amount * (i % 2 ? 1 : -0.8) * (0.8 + (i % 3) * 0.15); });
+  runSwings();
+}
+
+function renderTags({ drop = false } = {}) {
   const list = $('#tags');
   list.innerHTML = '';
+  swings = [];
   state.people.forEach((person, index) => {
     const li = document.createElement('li');
-    li.style.setProperty('--i', index);
+    const pin = document.createElement('span');
+    pin.className = 'pin';
+    const swing = document.createElement('div');
+    swing.className = 'swing';
     const btn = document.createElement('button');
     btn.type = 'button';
     btn.className = 'tag';
@@ -168,31 +202,36 @@ function renderTags() {
     if (person.revealed) {
       const st = document.createElement('span');
       st.className = 'tag__state';
-      st.innerHTML = `${STAR}<span>a déjà tiré</span>`;
+      st.innerHTML = `${STAR}<span>a déjà pioché</span>`;
       btn.append(st);
-      btn.setAttribute('aria-label', `${person.name}, a déjà tiré`);
+      btn.setAttribute('aria-label', `${person.name}, a déjà pioché`);
     }
+    const s = { el: swing, base: rand(-2.5, 2.5), a: 0, v: 0 };
+    s.a = drop && !reduceMotion ? s.base + (index % 2 ? 1 : -1) * rand(16, 26) : s.base;
+    swing.style.transform = `rotate(${s.a.toFixed(2)}deg)`;
+    swings.push(s);
+    btn.addEventListener('pointerdown', () => { s.v += (index % 2 ? -1 : 1) * 1.6; runSwings(); });
     btn.addEventListener('click', () => selectName(person.name, btn));
-    li.append(btn);
+    swing.append(btn);
+    li.append(pin, swing);
+    if (drop && !reduceMotion) li.animate([{ opacity: 0, transform: 'translateY(-26px)' }, { opacity: 1, transform: 'none' }], { duration: 650, delay: 250 + index * 70, easing: 'cubic-bezier(0.2, 0.8, 0.2, 1)', fill: 'backwards' });
     list.append(li);
   });
+  if (drop) setTimeout(runSwings, 250);
 }
 
-async function loadState() {
+async function loadState({ drop = false } = {}) {
   const data = await api('state');
   state.people = data.people;
   state.event = data.event;
   renderCountdown();
   renderProgress();
-  renderTags();
+  renderTags({ drop });
 }
 
 async function goHome({ push = true } = {}) {
   show('home', { push });
-  try {
-    await loadState();
-    drawGarland(new Set(state.people.filter((p) => p.revealed).map((p) => p.name)));
-  } catch { /* on garde l'affichage précédent */ }
+  try { await loadState(); drawGarland(litNames()); } catch { /* on garde l'affichage précédent */ }
 }
 
 // ---------- Contrôle d'identité (scanner d'empreinte, pour rire) ----------
@@ -201,12 +240,7 @@ const scanner = $('#scanner');
 const scanStatus = $('#scan-status');
 const checkDone = $('#check-done');
 const HOLD_MS = reduceMotion ? 700 : 1900;
-
-const SCAN_STEPS = [
-  'Lecture de l\'empreinte…',
-  'Comparaison avec la liste des gentils…',
-  'Consultation de l\'historique des cadeaux…',
-];
+const SCAN_STEPS = ['Lecture de l\'empreinte…', 'Comparaison avec la liste des gentils…', 'Consultation de l\'historique des cadeaux…'];
 const VERDICTS = [
   (n) => `Empreinte reconnue. ${n}, 98 % gentil, 2 % « je l'ai trouvé sur Vinted ».`,
   () => 'Identité confirmée. Aucune paire de chaussettes offerte à ce jour, bravo.',
@@ -216,29 +250,25 @@ const VERDICTS = [
   () => 'Profil vérifié. Cadeaux achetés à la station-service : aucun. Ne gâche pas tout.',
 ];
 
-function setStatus(el, text, kind = '') {
-  el.textContent = text;
-  el.className = `${el.classList.contains('scan-status') ? 'scan-status' : 'status'}${kind ? ` is-${kind}` : ''}`;
+function setScan(text, kind = '') {
+  scanStatus.textContent = text;
+  scanStatus.className = `scan-status${kind ? ` is-${kind}` : ''}`;
 }
 
-let hold = { active: false, start: 0, raf: 0, done: false, busy: false };
+let hold = { active: false, start: 0, raf: 0, done: false, busy: false, ticks: 0 };
 
 function resetCheck(name) {
-  hold = { active: false, start: 0, raf: 0, done: false, busy: false };
+  hold = { active: false, start: 0, raf: 0, done: false, busy: false, ticks: 0 };
   check.classList.remove('is-verified', 'is-reset');
   check.style.setProperty('--p', 0);
   scanner.classList.remove('is-scanning', 'is-done');
   scanner.disabled = false;
   checkDone.hidden = true;
-  setStatus(scanStatus, 'Pose ton pouce ici et laisse-le appuyé');
+  setScan('Pose ton pouce ici et laisse-le appuyé');
   const person = state.people.find((p) => p.name === name);
   const warn = $('#check-warn');
-  if (person?.revealed) {
-    warn.textContent = `${name} a déjà ouvert son cadeau. Si c'est toi, scanne ton pouce pour le revoir. Sinon, repose ce téléphone : les lutins prennent des notes.`;
-    warn.hidden = false;
-  } else {
-    warn.hidden = true;
-  }
+  warn.hidden = !person?.revealed;
+  if (person?.revealed) warn.textContent = `${name} a déjà ouvert son cadeau. Si c'est toi, scanne ton pouce pour le revoir. Sinon, repose ce téléphone : les lutins prennent des notes.`;
   $('#fineprint').textContent = `En continuant, tu certifies sur l'honneur être ${name}. Toute usurpation sera punie d'un cadeau acheté au tabac du coin.`;
 }
 
@@ -246,7 +276,9 @@ function scanTick() {
   const p = Math.min(1, (performance.now() - hold.start) / HOLD_MS);
   check.style.setProperty('--p', p.toFixed(3));
   const step = SCAN_STEPS[Math.min(SCAN_STEPS.length - 1, Math.floor(p * SCAN_STEPS.length))];
-  if (scanStatus.textContent !== step) setStatus(scanStatus, step);
+  if (scanStatus.textContent !== step) setScan(step);
+  const t = Math.floor(p * 12);
+  if (t > hold.ticks) { hold.ticks = t; sound.tick(); }
   if (p >= 1) { finishScan(); return; }
   if (hold.active) hold.raf = requestAnimationFrame(scanTick);
 }
@@ -255,6 +287,7 @@ function startHold(e) {
   if (hold.done || hold.busy || hold.active) return;
   e?.preventDefault?.();
   hold.active = true;
+  hold.ticks = 0;
   hold.start = performance.now();
   check.classList.remove('is-reset');
   scanner.classList.add('is-scanning');
@@ -270,7 +303,7 @@ function stopHold() {
   scanner.classList.remove('is-scanning');
   check.classList.add('is-reset');
   check.style.setProperty('--p', 0);
-  setStatus(scanStatus, 'Trop rapide. Les lutins sont lents, laisse ton pouce appuyé.', 'error');
+  setScan('Trop rapide. Les lutins sont lents, laisse ton pouce appuyé.', 'error');
 }
 
 async function finishScan() {
@@ -286,16 +319,17 @@ async function finishScan() {
     scanner.classList.add('is-done');
     scanner.disabled = true;
     check.classList.add('is-verified');
-    const verdict = VERDICTS[Math.floor(Math.random() * VERDICTS.length)](state.selected);
-    setStatus(scanStatus, verdict, 'result');
+    setScan(VERDICTS[Math.floor(Math.random() * VERDICTS.length)](state.selected), 'result');
     sound.seal();
     navigator.vibrate?.([20, 50, 30]);
+    const r = scanner.getBoundingClientRect();
+    overlay.sparkle(r.left + r.width / 2, r.top + r.height / 2, 26, r.width * 0.45);
     checkDone.hidden = false;
   } catch (err) {
     hold.done = false;
     check.classList.add('is-reset');
     check.style.setProperty('--p', 0);
-    setStatus(scanStatus, err.message, 'error');
+    setScan(err.message, 'error');
   } finally {
     hold.busy = false;
   }
@@ -312,15 +346,10 @@ $('#enter-btn').addEventListener('click', () => openGiftScreen());
 
 async function selectName(name, tagEl) {
   state.selected = name;
-  // Déjà identifié sur ce téléphone : on va directement au cadeau.
-  if (store.get('token') && store.get('name') === name) {
-    openGiftScreen();
-    return;
-  }
+  if (store.get('token') && store.get('name') === name) { openGiftScreen(); return; }
   const qName = $('#q-name');
   qName.textContent = name;
   resetCheck(name);
-
   const nameEl = tagEl?.querySelector('.tag__name');
   if (nameEl && document.startViewTransition && !reduceMotion) {
     // Le prénom de l'étiquette glisse jusqu'au titre « Salut … ».
@@ -332,190 +361,194 @@ async function selectName(name, tagEl) {
     });
     vt.finished.finally(() => { qName.style.viewTransitionName = ''; });
   } else {
-    tagEl?.classList.add('is-pulled');
-    await wait(reduceMotion ? 0 : 160);
-    tagEl?.classList.remove('is-pulled');
+    await wait(reduceMotion ? 0 : 140);
     show('question');
   }
 }
 
-// ---------- Cadeau ----------
+// ---------- Cadeau en 3D ----------
 const gift = $('#gift');
+const cube = $('#cube');
 const reveal = $('#reveal');
+const revealName = $('#reveal-name');
 const after = $('#after');
-const track = $('#reel-track');
 const stage = $('#stage');
+const flash = $('#flash');
+const spin = { raf: 0, ry: -28, vel: 0, dragging: false, lastX: 0, moved: 0, t0: performance.now(), shaking: false };
+
+function giftLoop(now) {
+  if (current !== 'gift' || gift.hidden) { spin.raf = 0; return; }
+  const t = (now - spin.t0) / 1000;
+  if (!spin.dragging) {
+    spin.ry += spin.vel;
+    spin.vel *= 0.94;
+    if (Math.abs(spin.vel) < 0.4) {
+      const target = -28 + Math.sin(t * 0.8) * 16;
+      const diff = ((target - spin.ry + 540) % 360) - 180;
+      spin.ry += diff * 0.025;
+    }
+  }
+  let rz = 0;
+  if (spin.shaking) { rz = Math.sin(now / 28) * 6; spin.ry += Math.sin(now / 40) * 1.6; }
+  cube.style.setProperty('--ry', `${spin.ry.toFixed(2)}deg`);
+  cube.style.setProperty('--rz', `${rz.toFixed(2)}deg`);
+  cube.style.setProperty('--bob', `${(Math.sin(t * 1.6) * 5).toFixed(2)}px`);
+  spin.raf = requestAnimationFrame(giftLoop);
+}
+function startGiftLoop() {
+  if (spin.raf || reduceMotion) return;
+  spin.raf = requestAnimationFrame(giftLoop);
+}
+
+gift.addEventListener('pointerdown', (e) => {
+  if (gift.classList.contains('is-open')) return;
+  spin.dragging = true;
+  spin.lastX = e.clientX;
+  spin.moved = 0;
+  spin.vel = 0;
+  gift.classList.add('is-dragging');
+  gift.setPointerCapture?.(e.pointerId);
+  sound.unlock();
+});
+gift.addEventListener('pointermove', (e) => {
+  if (!spin.dragging) return;
+  const dx = e.clientX - spin.lastX;
+  spin.lastX = e.clientX;
+  spin.moved += Math.abs(dx);
+  spin.ry += dx * 0.7;
+  spin.vel = dx * 0.7;
+});
+function endDrag() {
+  if (!spin.dragging) return false;
+  spin.dragging = false;
+  gift.classList.remove('is-dragging');
+  return true;
+}
+gift.addEventListener('pointerup', () => { if (endDrag() && spin.moved < 8) openGift(); });
+gift.addEventListener('pointercancel', endDrag);
+gift.addEventListener('click', (e) => { if (e.detail === 0) openGift(); }); // clavier
 
 function resetGift() {
   gift.hidden = false;
-  gift.classList.remove('is-open', 'is-shaking');
+  gift.classList.remove('is-open', 'is-gone', 'is-dragging');
+  stage.classList.remove('is-opened', 'is-named');
   reveal.hidden = true;
-  reveal.classList.remove('is-in', 'is-landed');
-  track.style.transition = 'none';
-  track.style.transform = 'none';
-  track.innerHTML = '';
+  reveal.classList.remove('is-in', 'is-named', 'is-tilting');
+  revealName.textContent = '';
   after.hidden = true;
-  stage.classList.remove('is-opened', 'is-landed');
-  reveal.classList.remove('is-tilting');
   $('#gift-title').textContent = 'Ton cadeau t\'attend';
   $('#gift-hint').hidden = false;
-  $('#gift-hint').textContent = 'Touche le paquet pour l\'ouvrir.';
+  $('#gift-hint').textContent = 'Fais-le tourner du doigt, puis touche-le pour l\'ouvrir.';
+  spin.ry = -28; spin.vel = 0; spin.shaking = false;
   state.opening = false;
 }
 
 async function openGiftScreen() {
   resetGift();
   show('gift');
-  const name = store.get('name');
-  const me = state.people.find((p) => p.name === name);
-  // Déjà tiré auparavant : on affiche directement le résultat, sans rejouer l'ouverture.
+  startGiftLoop();
+  const me = state.people.find((p) => p.name === store.get('name'));
   if (me?.revealed) {
-    try {
-      state.reveal = await api('reveal', { method: 'POST' });
-      showResultInstantly(state.reveal);
-    } catch (err) { handleRevealError(err); }
+    try { state.reveal = await api('reveal', { method: 'POST' }); showResultInstantly(state.reveal); } catch (err) { handleRevealError(err); }
   }
 }
 
 function handleRevealError(err) {
-  gift.classList.remove('is-shaking');
+  spin.shaking = false;
   state.opening = false;
-  if (err.status === 401) {
-    store.del('token');
-    store.del('name');
-    goHome();
-    return;
-  }
+  if (err.status === 401) { store.del('token'); store.del('name'); goHome(); return; }
   $('#gift-hint').textContent = err.message;
 }
 
-gift.addEventListener('click', async () => {
+// Position finale (sans les transformations en cours) du prénom dans la carte.
+function finalNameRect() {
+  const s = stage.getBoundingClientRect();
+  return {
+    left: s.left + reveal.offsetLeft + revealName.offsetLeft,
+    top: s.top + reveal.offsetTop + revealName.offsetTop,
+    width: revealName.offsetWidth,
+    height: revealName.offsetHeight,
+  };
+}
+
+async function openGift() {
   if (state.opening || gift.classList.contains('is-open')) return;
   state.opening = true;
   sound.unlock();
-  gift.classList.add('is-shaking');
+  spin.shaking = true;
   $('#gift-hint').textContent = 'Ça bouge…';
+  let data;
   try {
-    const [data] = await Promise.all([state.reveal ? Promise.resolve(state.reveal) : api('reveal', { method: 'POST' }), wait(reduceMotion ? 0 : 900)]);
-    state.reveal = data;
-    const me = state.people.find((p) => p.name === data.name);
-    if (me) me.revealed = true;
-    await playOpening(data);
-  } catch (err) {
-    handleRevealError(err);
-  }
-});
+    [data] = await Promise.all([state.reveal ? Promise.resolve(state.reveal) : api('reveal', { method: 'POST' }), wait(reduceMotion ? 0 : 900)]);
+  } catch (err) { handleRevealError(err); return; }
+  state.reveal = data;
+  const me = state.people.find((p) => p.name === data.name);
+  if (me) me.revealed = true;
+  spin.shaking = false;
 
-function buildReel(data) {
-  const others = state.people.map((p) => p.name).filter((n) => n !== data.name);
-  const seq = [];
-  const length = reduceMotion ? 1 : 34;
-  let last = data.target;
-  for (let i = 0; i < length - 1; i++) {
-    let pick;
-    do { pick = others[Math.floor(Math.random() * others.length)]; } while (pick === last && others.length > 1);
-    seq.push(pick);
-    last = pick;
-  }
-  if (seq[seq.length - 1] === data.target) seq[seq.length - 1] = others.find((n) => n !== data.target);
-  seq.push(data.target);
-  track.innerHTML = '';
-  seq.forEach((n, i) => {
-    const el = document.createElement('div');
-    el.className = `reel__item${i === seq.length - 1 ? ' is-target' : ''}`;
-    el.textContent = n;
-    if (i !== seq.length - 1) el.setAttribute('aria-hidden', 'true');
-    track.append(el);
-  });
-  return seq.length;
-}
+  if (reduceMotion) { showResultInstantly(data); return; }
 
-async function playOpening(data) {
-  gift.classList.remove('is-shaking');
+  // 1. Le couvercle s'envole, la lumière jaillit.
   $('#gift-hint').textContent = '';
-  const count = buildReel(data);
-  const itemH = parseFloat(getComputedStyle(reveal).getPropertyValue('--rh')) || 74;
-
-  if (reduceMotion) {
-    showOnlyTarget(data.target);
-    gift.hidden = true;
-    reveal.hidden = false;
-    reveal.classList.add('is-in', 'is-landed');
-    finishReveal(data);
-    return;
-  }
-
   gift.classList.add('is-open');
   stage.classList.add('is-opened');
-  sound.pop();
+  sound.whoosh();
   navigator.vibrate?.(30);
-  const rect = gift.getBoundingClientRect();
-  setTimeout(() => {
-    confetti.burst(rect.left + rect.width / 2, rect.top + rect.height * 0.35, 150);
-    confetti.sparkle(rect.left + rect.width / 2, rect.top + rect.height * 0.4, 40, rect.width * 0.5);
-  }, 180);
-
-  await wait(650);
-  reveal.hidden = false;
-  void reveal.offsetWidth;
-  reveal.classList.add('is-in');
+  const g = gift.getBoundingClientRect();
+  const ox = g.left + g.width / 2;
+  const oy = g.top + 118;
+  overlay.sparkle(ox, oy, 46, 70);
   await wait(450);
-  gift.hidden = true;
 
-  // Roulette : les prénoms défilent puis ralentissent jusqu'au bon.
-  const duration = 4200;
-  const distance = -(count - 1) * itemH;
-  track.style.transition = 'none';
-  track.style.transform = 'none';
-  const spin = track.animate(
-    [
-      { transform: 'translateY(0)', easing: 'cubic-bezier(0.45, 0, 0.9, 0.6)' },
-      { transform: `translateY(${distance * 0.35}px)`, offset: 0.22, easing: 'linear' },
-      { transform: `translateY(${distance * 0.72}px)`, offset: 0.5, easing: 'cubic-bezier(0.1, 0.5, 0.2, 1)' },
-      { transform: `translateY(${distance - itemH * 0.18}px)`, offset: 0.93, easing: 'ease-in-out' },
-      { transform: `translateY(${distance}px)` },
-    ],
-    { duration, fill: 'forwards' },
-  );
-  sound.ticks(duration);
-  await spin.finished.catch(() => {});
+  // 2. La carte arrive, les étincelles tourbillonnent puis forment le prénom.
+  revealName.textContent = data.target;
+  reveal.hidden = false;
+  const rect = finalNameRect();
+  const fontSize = parseFloat(getComputedStyle(revealName).fontSize) || 50;
+  setTimeout(() => { gift.classList.add('is-gone'); reveal.classList.add('is-in'); }, 650);
+  sound.rise(2.5);
+  $('#gift-title').textContent = 'Et tu as pioché…';
+  await overlay.formText({ text: data.target, font: `italic 600 ${fontSize}px Fraunces`, rect, ox, oy, swirl: 1.1, converge: 1.4 });
 
-  // On ne garde que le bon prénom dans la roulette.
-  spin.cancel();
-  showOnlyTarget(data.target);
-  reveal.classList.add('is-landed');
-  stage.classList.add('is-landed');
+  // 3. Éclat, prénom en or, feu d'artifice.
+  flash.classList.remove('is-on');
+  void flash.offsetWidth;
+  flash.classList.add('is-on');
+  sound.boom();
   sound.chime();
   navigator.vibrate?.([25, 60, 35]);
+  reveal.classList.add('is-named');
+  stage.classList.add('is-named');
+  overlay.fadeText();
+  gift.hidden = true;
   const r = reveal.getBoundingClientRect();
-  confetti.burst(r.left + r.width / 2, r.top + r.height * 0.45, 110, 0.75);
-  confetti.sparkle(r.left + r.width / 2, r.top + r.height * 0.5, 34, r.width * 0.45);
-  await wait(700);
+  overlay.burst(r.left + r.width / 2, r.top + r.height * 0.45, 120, 0.8);
+  const W = window.innerWidth;
+  [[0.22, 0.2, 'gold', 150], [0.78, 0.16, 'red', 450], [0.5, 0.1, 'white', 800], [0.3, 0.12, 'gold', 1150]].forEach(([fx, fy, tone, delay]) => {
+    setTimeout(() => { overlay.firework(W * fx, window.innerHeight * fy + 60, tone); sound.pop(); }, delay);
+  });
   finishReveal(data);
-}
-
-function showOnlyTarget(name) {
-  track.style.transition = 'none';
-  track.style.transform = 'none';
-  track.innerHTML = '';
-  const el = document.createElement('div');
-  el.className = 'reel__item is-target';
-  el.textContent = name;
-  track.append(el);
 }
 
 function showResultInstantly(data) {
-  showOnlyTarget(data.target);
+  revealName.textContent = data.target;
   gift.hidden = true;
   reveal.hidden = false;
-  reveal.classList.add('is-in', 'is-landed');
-  stage.classList.add('is-opened', 'is-landed');
+  reveal.classList.add('is-in', 'is-named');
+  stage.classList.add('is-opened', 'is-named');
   finishReveal(data);
 }
 
-// Inclinaison de la carte quand on la touche ou la survole.
+function finishReveal() {
+  $('#gift-title').textContent = 'C\'est pioché !';
+  $('#gift-hint').hidden = true;
+  after.hidden = false;
+  state.opening = false;
+}
+
+// Carte qui s'incline quand on la touche ou la survole.
 function tiltCard(e) {
-  if (reduceMotion || !reveal.classList.contains('is-landed')) return;
+  if (reduceMotion || !reveal.classList.contains('is-named')) return;
   const r = reveal.getBoundingClientRect();
   const px = Math.min(1, Math.max(0, (e.clientX - r.left) / r.width));
   const py = Math.min(1, Math.max(0, (e.clientY - r.top) / r.height));
@@ -525,52 +558,22 @@ function tiltCard(e) {
   reveal.style.setProperty('--gy', `${(py * 100).toFixed(1)}%`);
   reveal.classList.add('is-tilting');
 }
-function untiltCard() { reveal.classList.remove('is-tilting'); }
+const untilt = () => reveal.classList.remove('is-tilting');
 reveal.addEventListener('pointermove', tiltCard);
 reveal.addEventListener('pointerdown', tiltCard);
-reveal.addEventListener('pointerleave', untiltCard);
-reveal.addEventListener('pointercancel', untiltCard);
-reveal.addEventListener('pointerup', (e) => { if (e.pointerType !== 'mouse') untiltCard(); });
+reveal.addEventListener('pointerleave', untilt);
+reveal.addEventListener('pointercancel', untilt);
+reveal.addEventListener('pointerup', (e) => { if (e.pointerType !== 'mouse') untilt(); });
 
-function finishReveal(data) {
-  $('#gift-title').textContent = 'C\'est tiré !';
-  $('#gift-hint').hidden = true;
-  const de = /^[aeiouyàâäéèêëîïôöûüh]/i.test(data.target) ? 'd\'' : 'de ';
-  $('#target-wish-title').textContent = `Les idées cadeaux ${de}${data.target}`;
-  const wishEl = $('#target-wish');
-  if (data.targetWishlist) {
-    wishEl.textContent = data.targetWishlist;
-    wishEl.classList.remove('is-empty');
-  } else {
-    wishEl.textContent = `${data.target} n'a pas encore écrit d'idées. Reviens voir un peu plus tard.`;
-    wishEl.classList.add('is-empty');
-  }
-  $('#my-wish').value = data.myWishlist || '';
-  setStatus($('#wish-status'), '');
-  after.hidden = false;
-  after.classList.remove('is-entering');
-  void after.offsetWidth;
-  if (!reduceMotion) after.classList.add('is-entering');
-  state.opening = false;
+// ---------- Son ----------
+const soundBtn = $('#sound');
+function renderSound(on) {
+  soundBtn.setAttribute('aria-pressed', String(on));
+  soundBtn.setAttribute('aria-label', on ? 'Son activé, toucher pour couper' : 'Son coupé, toucher pour activer');
 }
-
-// ---------- Liste d'envies ----------
-$('#wish-form').addEventListener('submit', async (e) => {
-  e.preventDefault();
-  const btn = e.submitter || $('#wish-form .btn');
-  const status = $('#wish-status');
-  btn.disabled = true;
-  try {
-    const text = $('#my-wish').value.trim();
-    await api('wishlist', { method: 'POST', body: { text } });
-    if (state.reveal) state.reveal.myWishlist = text;
-    setStatus(status, 'Enregistré', 'ok');
-  } catch (err) {
-    setStatus(status, err.message, 'error');
-  } finally {
-    btn.disabled = false;
-  }
-});
+renderSound(sound.on);
+sound.onChange(renderSound);
+soundBtn.addEventListener('click', () => sound.toggle());
 
 // ---------- Actions diverses ----------
 document.addEventListener('click', (e) => {
@@ -581,6 +584,7 @@ document.addEventListener('click', (e) => {
     const data = state.reveal;
     resetGift();
     state.reveal = data;
+    startGiftLoop();
     window.scrollTo({ top: 0, behavior: reduceMotion ? 'auto' : 'smooth' });
   }
   if (action === 'logout') {
@@ -591,266 +595,19 @@ document.addEventListener('click', (e) => {
   }
 });
 
-// ---------- Neige ----------
-function startSnow(canvas) {
-  const ctx = canvas.getContext('2d');
-  let w, h, dpr, flakes = [];
-  const make = (y) => {
-    const r = Math.random() ** 2 * 2.6 + 0.6;
-    return { x: Math.random() * w, y: y ?? Math.random() * h, r, vy: 0.25 + r * 0.32, sway: Math.random() * Math.PI * 2, amp: 0.2 + Math.random() * 0.6, a: 0.25 + r / 4.5 };
-  };
-  const resize = () => {
-    dpr = Math.min(window.devicePixelRatio || 1, 2);
-    w = window.innerWidth; h = window.innerHeight;
-    canvas.width = w * dpr; canvas.height = h * dpr;
-    ctx.setTransform(dpr, 0, 0, dpr, 0, 0);
-    const count = Math.round(Math.min(120, (w * h) / 7000));
-    flakes = Array.from({ length: count }, () => make());
-  };
-  resize();
-  window.addEventListener('resize', resize);
-  const draw = () => {
-    ctx.clearRect(0, 0, w, h);
-    for (const f of flakes) {
-      ctx.globalAlpha = f.a;
-      ctx.beginPath();
-      ctx.arc(f.x, f.y, f.r, 0, Math.PI * 2);
-      ctx.fillStyle = '#f7f2e7';
-      ctx.fill();
-    }
-  };
-  if (reduceMotion) { draw(); return; }
-  let last = performance.now();
-  const tick = (now) => {
-    const dt = Math.min(48, now - last) / 16.67;
-    last = now;
-    for (const f of flakes) {
-      f.sway += 0.012 * dt;
-      f.y += f.vy * dt;
-      f.x += Math.sin(f.sway) * f.amp * 0.5 * dt + 0.08 * dt;
-      if (f.y > h + 5) Object.assign(f, make(-5));
-      if (f.x > w + 5) f.x = -5;
-    }
-    draw();
-    requestAnimationFrame(tick);
-  };
-  requestAnimationFrame(tick);
-}
-
-// ---------- Confettis ----------
-const confetti = (() => {
-  const canvas = $('#confetti');
-  const ctx = canvas.getContext('2d');
-  const colors = ['#e9c46a', '#f7e4a6', '#d13a4e', '#f7f2e7', '#57b98a'];
-  let parts = [];
-  let running = false;
-  const resize = () => {
-    const dpr = Math.min(window.devicePixelRatio || 1, 2);
-    canvas.width = window.innerWidth * dpr;
-    canvas.height = window.innerHeight * dpr;
-    ctx.setTransform(dpr, 0, 0, dpr, 0, 0);
-  };
-  resize();
-  window.addEventListener('resize', resize);
-  let last = 0;
-  const frame = (now) => {
-    const dt = Math.min(48, now - last) / 16.67;
-    last = now;
-    ctx.clearRect(0, 0, window.innerWidth, window.innerHeight);
-    parts = parts.filter((p) => p.life > 0);
-    for (const p of parts) {
-      p.vy += p.g * dt;
-      p.vx *= p.drag ** dt;
-      p.vy *= p.drag ** dt;
-      p.x += p.vx * dt;
-      p.y += p.vy * dt;
-      p.rot += p.vr * dt;
-      p.life -= dt;
-      ctx.save();
-      ctx.globalAlpha = Math.min(1, p.life / 40);
-      ctx.translate(p.x, p.y);
-      ctx.rotate(p.rot);
-      ctx.fillStyle = p.color;
-      if (p.spark) {
-        const r = p.w * (0.55 + 0.45 * Math.sin(p.life * 0.25 + p.phase));
-        ctx.shadowColor = '#f7e4a6';
-        ctx.shadowBlur = 10;
-        ctx.beginPath();
-        for (let k = 0; k < 8; k++) {
-          const a = (k * Math.PI) / 4;
-          const rad = k % 2 ? r * 0.3 : r;
-          ctx.lineTo(Math.cos(a) * rad, Math.sin(a) * rad);
-        }
-        ctx.closePath();
-        ctx.fill();
-      } else if (p.round) { ctx.beginPath(); ctx.arc(0, 0, p.w / 2, 0, Math.PI * 2); ctx.fill(); }
-      else { ctx.scale(1, Math.cos(p.rot * 2)); ctx.fillRect(-p.w / 2, -p.h / 2, p.w, p.h); }
-      ctx.restore();
-    }
-    if (parts.length) requestAnimationFrame(frame);
-    else { running = false; ctx.clearRect(0, 0, window.innerWidth, window.innerHeight); }
-  };
-  return {
-    burst(x, y, count = 120, power = 1) {
-      if (reduceMotion) return;
-      for (let i = 0; i < count; i++) {
-        const angle = -Math.PI / 2 + (Math.random() - 0.5) * Math.PI * 1.25;
-        const speed = (5 + Math.random() * 9) * power;
-        parts.push({
-          x, y,
-          vx: Math.cos(angle) * speed,
-          vy: Math.sin(angle) * speed,
-          rot: Math.random() * Math.PI,
-          vr: (Math.random() - 0.5) * 0.3,
-          w: 5 + Math.random() * 6,
-          h: 8 + Math.random() * 8,
-          round: Math.random() < 0.3,
-          color: colors[Math.floor(Math.random() * colors.length)],
-          life: 90 + Math.random() * 70,
-          g: 0.16,
-          drag: 0.985,
-        });
-      }
-      start();
-    },
-    // Étincelles dorées qui montent doucement en scintillant.
-    sparkle(x, y, count = 30, spread = 120) {
-      if (reduceMotion) return;
-      for (let i = 0; i < count; i++) {
-        parts.push({
-          x: x + (Math.random() - 0.5) * spread * 2,
-          y: y + (Math.random() - 0.5) * spread * 0.6,
-          vx: (Math.random() - 0.5) * 1.6,
-          vy: -0.6 - Math.random() * 2.2,
-          rot: 0,
-          vr: (Math.random() - 0.5) * 0.04,
-          w: 4 + Math.random() * 6,
-          spark: true,
-          phase: Math.random() * 6,
-          color: Math.random() < 0.6 ? '#f7e4a6' : '#fff6dc',
-          life: 80 + Math.random() * 80,
-          g: -0.012,
-          drag: 0.975,
-        });
-      }
-      start();
-    },
-  };
-  function start() {
-    if (!running) { running = true; last = performance.now(); requestAnimationFrame(frame); }
-  }
-})();
-
-// ---------- Sons (générés, aucun fichier audio) ----------
-const sound = (() => {
-  let ctx = null;
-  let on = store.get('sound') !== 'off';
-  const btn = $('#sound');
-  const render = () => {
-    btn.setAttribute('aria-pressed', String(on));
-    btn.setAttribute('aria-label', on ? 'Son activé, toucher pour couper' : 'Son coupé, toucher pour activer');
-  };
-  render();
-  btn.addEventListener('click', () => { on = !on; store.set('sound', on ? 'on' : 'off'); render(); if (on) { unlock(); chime(); } });
-
-  function unlock() {
-    try {
-      ctx ||= new (window.AudioContext || window.webkitAudioContext)();
-      if (ctx.state === 'suspended') ctx.resume();
-    } catch { ctx = null; }
-  }
-  // Clochette : quelques harmoniques qui s'éteignent doucement.
-  function bell(t0, freq, dur, vol) {
-    const out = ctx.createGain();
-    out.gain.setValueAtTime(0.0001, t0);
-    out.gain.exponentialRampToValueAtTime(vol, t0 + 0.008);
-    out.gain.exponentialRampToValueAtTime(0.0001, t0 + dur);
-    out.connect(ctx.destination);
-    [[1, 1], [2.756, 0.32], [5.404, 0.12]].forEach(([mult, amp]) => {
-      const o = ctx.createOscillator();
-      const g = ctx.createGain();
-      o.type = 'sine';
-      o.frequency.value = freq * mult;
-      g.gain.value = amp;
-      o.connect(g).connect(out);
-      o.start(t0);
-      o.stop(t0 + dur + 0.05);
-    });
-  }
-  function chime() {
-    if (!on || !ctx) return;
-    const t = ctx.currentTime + 0.02;
-    [1046.5, 1318.5, 1568, 2093].forEach((f, i) => bell(t + i * 0.1, f, 1.9, 0.11));
-  }
-  function pop() {
-    if (!on || !ctx) return;
-    const t = ctx.currentTime;
-    const len = Math.floor(ctx.sampleRate * 0.18);
-    const buf = ctx.createBuffer(1, len, ctx.sampleRate);
-    const data = buf.getChannelData(0);
-    for (let i = 0; i < len; i++) data[i] = (Math.random() * 2 - 1) * (1 - i / len) ** 3;
-    const src = ctx.createBufferSource();
-    const filter = ctx.createBiquadFilter();
-    const g = ctx.createGain();
-    filter.type = 'bandpass';
-    filter.frequency.value = 900;
-    filter.Q.value = 0.8;
-    g.gain.value = 0.5;
-    src.buffer = buf;
-    src.connect(filter).connect(g).connect(ctx.destination);
-    src.start(t);
-    bell(t + 0.05, 784, 0.9, 0.06);
-  }
-  // Petits « tic » qui ralentissent pendant la roulette.
-  function ticks(duration) {
-    if (!on || !ctx) return;
-    const t0 = ctx.currentTime;
-    let t = 0;
-    let gap = 0.05;
-    while (t < duration / 1000 - 0.25) {
-      const at = t0 + t;
-      const o = ctx.createOscillator();
-      const g = ctx.createGain();
-      o.type = 'triangle';
-      o.frequency.value = 2400;
-      g.gain.setValueAtTime(0.0001, at);
-      g.gain.exponentialRampToValueAtTime(0.035, at + 0.004);
-      g.gain.exponentialRampToValueAtTime(0.0001, at + 0.04);
-      o.connect(g).connect(ctx.destination);
-      o.start(at);
-      o.stop(at + 0.05);
-      t += gap;
-      gap *= 1.16;
-    }
-  }
-  function seal() {
-    if (!on || !ctx) return;
-    const t = ctx.currentTime + 0.02;
-    bell(t, 659.3, 1.2, 0.09);
-    bell(t + 0.09, 987.8, 1.5, 0.08);
-  }
-  return { unlock, chime, pop, ticks, seal };
-})();
-
 // ---------- Démarrage ----------
 startSnow($('#snow'));
 try { history.replaceState({ screen: 'home' }, ''); } catch { /* cadre restreint */ }
 
 (async function init() {
   try {
-    await loadState();
+    await loadState({ drop: true });
   } catch (err) {
     $('#progress').textContent = err.message;
     drawGarland();
     return;
   }
   lightGarland();
-  if (!reduceMotion) {
-    const tags = $('#tags');
-    tags.classList.add('is-dropping');
-    setTimeout(() => tags.classList.remove("is-dropping"), 150 + state.people.length * 55 + 1000);
-  }
-  // Déjà identifié sur ce téléphone : on reprend là où la personne en était.
   const name = store.get('name');
   if (store.get('token') && state.people.some((p) => p.name === name)) {
     state.selected = name;

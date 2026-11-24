@@ -35,15 +35,6 @@ t('revenir signale « déjà tiré »', again.data.revealed === true);
 const r2 = await call('reveal', { method: 'POST', token: again.data.token });
 t('même résultat en revenant', r2.data.target === pairs[names[0]] && r2.data.firstTime === false);
 
-const giver = names[0]; const receiver = pairs[giver];
-const re = await call('enter', { method: 'POST', body: { name: receiver } });
-await call('wishlist', { method: 'POST', token: re.data.token, body: { text: 'Un pull moche' } });
-const seenBy = await call('reveal', { method: 'POST', token: again.data.token });
-t('le Secret Santa voit les envies', seenBy.data.targetWishlist === 'Un pull moche');
-const other = names.find((n) => n !== giver && n !== receiver);
-const oe = await call('enter', { method: 'POST', body: { name: other } });
-const oseen = await call('reveal', { method: 'POST', token: oe.data.token });
-t('les autres ne les voient pas', oseen.data.targetWishlist !== 'Un pull moche');
 t('compteur de tirages', (await call('state')).data.people.filter((p) => p.revealed).length === 10);
 
 console.log(fail ? `${fail} échec(s)` : 'OK');

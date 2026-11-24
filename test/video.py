@@ -45,11 +45,26 @@ with sync_playwright() as p:
     page.screenshot(path=f'{OUT}/e-cadeau.png')
     time.sleep(0.8)
 
+    # rotation du cadeau au doigt
+    gb = page.locator('#gift').bounding_box()
+    gx, gy = gb['x'] + gb['width'] / 2, gb['y'] + gb['height'] / 2
+    page.mouse.move(gx - 60, gy); page.mouse.down()
+    for i in range(12): page.mouse.move(gx - 60 + i * 12, gy); time.sleep(0.03)
+    page.mouse.up()
+    time.sleep(0.6)
+    page.screenshot(path=f'{OUT}/e2-rotation.png')
+    time.sleep(0.8)
     page.tap('#gift')
-    time.sleep(1.25)
+    time.sleep(1.5)
     page.screenshot(path=f'{OUT}/f-ouverture.png')
-    time.sleep(6.2)
+    time.sleep(0.9)
+    page.screenshot(path=f'{OUT}/f2-tourbillon.png')
+    time.sleep(1.1)
+    page.screenshot(path=f'{OUT}/f3-convergence.png')
+    time.sleep(1.4)
     page.screenshot(path=f'{OUT}/g-revele.png')
+    time.sleep(1.2)
+    page.screenshot(path=f'{OUT}/g2-feux.png')
 
     # Inclinaison de la carte (simulée à la souris dans la vidéo)
     box = page.locator('#reveal').bounding_box()

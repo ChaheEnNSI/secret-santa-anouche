@@ -43,13 +43,7 @@
       db.revealed[me] = true;
       save();
       const target = db.draw[me];
-      return json({ name: me, target, firstTime, myWishlist: db.wish[me] || '', targetWishlist: db.wish[target] || '' });
-    }
-    if (route === 'wishlist') {
-      if (!me) return json({ error: 'Session expirée. Choisis ton prénom à nouveau.' }, 401);
-      db.wish[me] = String(body.text || '');
-      save();
-      return json({ ok: true });
+      return json({ name: me, target, firstTime });
     }
     return json({ error: 'Page introuvable.' }, 404);
   };

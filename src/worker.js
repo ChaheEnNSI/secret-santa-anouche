@@ -1,7 +1,6 @@
 import { EVENT, EXCLUSIONS, PEOPLE as CONFIG_PEOPLE } from './participants.js';
 import { makeDraw, assertValid } from './draw.js';
 
-const MAX_WISHLIST = 600;
 
 export default {
   async fetch(request, env) {
@@ -163,23 +162,12 @@ async function handleApi(request, env, url) {
     if (!name) return json({ error: 'Session expirée. Choisis ton prénom à nouveau.' }, 401);
     const pairs = await getDraw(env);
     const target = pairs[name];
-    const me = await env.DB.prepare('SELECT revealed_at, wishlist FROM people WHERE name = ?').bind(name).first();
+    const me = await env.DB.prepare('SELECT revealed_at FROM people WHERE name = ?').bind(name).first();
     const firstTime = !me.revealed_at;
     if (firstTime) {
       await env.DB.prepare('UPDATE people SET revealed_at = ? WHERE name = ? AND revealed_at IS NULL').bind(Date.now(), name).run();
     }
-    const them = await env.DB.prepare('SELECT wishlist FROM people WHERE name = ?').bind(target).first();
-    return json({ name, target, firstTime, myWishlist: me.wishlist, targetWishlist: them.wishlist });
-  }
-
-  if (route === 'POST /api/wishlist') {
-    const name = await readToken(env, request);
-    if (!name) return json({ error: 'Session expirée. Choisis ton prénom à nouveau.' }, 401);
-    const body = await readBody(request);
-    const text = String(body.text ?? '').trim();
-    if (text.length > MAX_WISHLIST) return json({ error: `${MAX_WISHLIST} caractères maximum.` }, 400);
-    await env.DB.prepare('UPDATE people SET wishlist = ? WHERE name = ?').bind(text, name).run();
-    return json({ ok: true });
+    return json({ name, target, firstTime });
   }
 
   return json({ error: 'Page introuvable.' }, 404);
