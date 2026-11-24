@@ -54,7 +54,7 @@ function show(name, { push = true, animate = true } = {}) {
     window.scrollTo({ top: 0 });
   };
   swap();
-  if (push) history.pushState({ screen: name }, '');
+  if (push) { try { history.pushState({ screen: name }, ''); } catch { /* cadre restreint */ } }
   current = name;
 }
 
@@ -796,7 +796,7 @@ const sound = (() => {
 
 // ---------- Démarrage ----------
 startSnow($('#snow'));
-history.replaceState({ screen: 'home' }, '');
+try { history.replaceState({ screen: 'home' }, ''); } catch { /* cadre restreint */ }
 
 (async function init() {
   try {
