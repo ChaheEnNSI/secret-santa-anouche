@@ -443,6 +443,28 @@ export const sound = (() => {
       o.connect(g).connect(ctx.destination);
       o.start(t); o.stop(t + 0.65);
     },
+    // Coup sourd quand on tape sur le cadeau, plus fort à chaque fois.
+    thump(level = 0) {
+      if (!ready()) return;
+      const t = ctx.currentTime;
+      const o = ctx.createOscillator(), g = ctx.createGain();
+      o.type = 'sine';
+      o.frequency.setValueAtTime(120 + level * 8, t);
+      o.frequency.exponentialRampToValueAtTime(45, t + 0.22);
+      g.gain.setValueAtTime(0.0001, t);
+      g.gain.exponentialRampToValueAtTime(0.22 + level * 0.02, t + 0.008);
+      g.gain.exponentialRampToValueAtTime(0.0001, t + 0.28);
+      o.connect(g).connect(ctx.destination);
+      o.start(t); o.stop(t + 0.3);
+      const scale = [523.3, 587.3, 659.3, 784, 880, 1046.5, 1174.7, 1318.5, 1568];
+      bell(t + 0.02, scale[Math.min(scale.length - 1, level)], 0.9, 0.06);
+    },
+    // Note de xylophone (ampoules de la guirlande).
+    note(i = 0) {
+      if (!ready()) return;
+      const scale = [523.3, 587.3, 659.3, 784, 880, 1046.5, 1174.7, 1318.5, 1568, 1760];
+      bell(ctx.currentTime + 0.01, scale[i % scale.length], 1.4, 0.09);
+    },
     pop() { // petite détonation de feu d'artifice
       if (!ready()) return;
       const t = ctx.currentTime;

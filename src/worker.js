@@ -60,6 +60,17 @@ async function ensureSchema(env) {
         fails INTEGER NOT NULL DEFAULT 0,
         locked_until INTEGER NOT NULL DEFAULT 0
       )`),
+      // Un prénom est « réservé » par le premier téléphone qui passe le contrôle d'identité.
+      db.prepare(`CREATE TABLE IF NOT EXISTS claims (
+        name TEXT PRIMARY KEY,
+        key_hash TEXT NOT NULL,
+        code TEXT NOT NULL,
+        fails INTEGER NOT NULL DEFAULT 0,
+        locked_until INTEGER NOT NULL DEFAULT 0,
+        at INTEGER NOT NULL
+      )`),
+      // Un téléphone ne peut servir qu'à un seul prénom.
+      db.prepare('CREATE TABLE IF NOT EXISTS devices (key_hash TEXT PRIMARY KEY, name TEXT NOT NULL)'),
       ...people(env).map((p) => db.prepare('INSERT OR IGNORE INTO people (name) VALUES (?)').bind(p.name)),
     ];
     schemaReady = db.batch(statements).catch((err) => {
@@ -110,27 +121,41 @@ async function hmacKey(env) {
   return crypto.subtle.importKey('raw', new TextEncoder().encode(secret), { name: 'HMAC', hash: 'SHA-256' }, false, ['sign', 'verify']);
 }
 
-async function makeToken(env, name) {
+// Identifiant du téléphone : une clé aléatoire gardée dans le navigateur, dont on ne stocke que l'empreinte.
+async function deviceHash(request) {
+  const key = (request.headers.get('x-device') || '').trim();
+  if (!/^[A-Za-z0-9-]{16,80}$/.test(key)) return null;
+  const digest = await crypto.subtle.digest('SHA-256', new TextEncoder().encode(`santa:${key}`));
+  return toB64url(new Uint8Array(digest));
+}
+
+async function makeToken(env, name, keyHash) {
   const key = await hmacKey(env);
-  const payload = new TextEncoder().encode(`v1:${name}`);
-  const sig = new Uint8Array(await crypto.subtle.sign('HMAC', key, payload));
+  const sig = new Uint8Array(await crypto.subtle.sign('HMAC', key, new TextEncoder().encode(`v2:${name}:${keyHash}`)));
   return `${toB64url(new TextEncoder().encode(name))}.${toB64url(sig)}`;
 }
 
-async function readToken(env, request) {
+async function readToken(env, request, keyHash) {
   const header = request.headers.get('authorization') || '';
   const token = header.startsWith('Bearer ') ? header.slice(7) : '';
   const [namePart, sigPart] = token.split('.');
-  if (!namePart || !sigPart) return null;
+  if (!namePart || !sigPart || !keyHash) return null;
   try {
     const name = new TextDecoder().decode(fromB64url(namePart));
     if (!findPerson(env, name)) return null;
     const key = await hmacKey(env);
-    const ok = await crypto.subtle.verify('HMAC', key, fromB64url(sigPart), new TextEncoder().encode(`v1:${name}`));
+    const ok = await crypto.subtle.verify('HMAC', key, fromB64url(sigPart), new TextEncoder().encode(`v2:${name}:${keyHash}`));
     return ok ? name : null;
   } catch {
     return null;
   }
+}
+
+const CODE_CHARS = 'ABCDEFGHJKMNPQRSTUVWXYZ23456789';
+function newCode() {
+  const bytes = new Uint8Array(4);
+  crypto.getRandomValues(bytes);
+  return Array.from(bytes, (b) => CODE_CHARS[b % CODE_CHARS.length]).join('');
 }
 
 // ---------- Routes ----------
@@ -139,35 +164,81 @@ async function handleApi(request, env, url) {
   await ensureSchema(env);
   const route = `${request.method} ${url.pathname}`;
 
+  // Aucune information sur qui a déjà pioché : seulement la liste des prénoms.
   if (route === 'GET /api/state') {
-    const { results } = await env.DB.prepare('SELECT name, revealed_at FROM people').all();
-    const revealed = new Set(results.filter((r) => r.revealed_at).map((r) => r.name));
-    return json({
-      event: EVENT,
-      people: people(env).map((p) => ({ name: p.name, revealed: revealed.has(p.name) })),
-    });
+    return json({ event: EVENT, people: people(env).map((p) => ({ name: p.name })) });
   }
 
-  // Entrée après le « contrôle d'identité » (pour rire) : on fait confiance au prénom choisi.
+  // Entrée après le « contrôle d'identité » (pour rire).
+  // Règles : un téléphone = un seul prénom ; un prénom = un seul téléphone (sauf code personnel).
   if (route === 'POST /api/enter') {
+    const keyHash = await deviceHash(request);
+    if (!keyHash) return json({ error: 'Ton navigateur bloque une fonction nécessaire. Essaie avec un autre navigateur.' }, 400);
     const body = await readBody(request);
     const person = findPerson(env, body.name);
     if (!person) return json({ error: 'Ce prénom ne fait pas partie de la liste.' }, 404);
-    const row = await env.DB.prepare('SELECT revealed_at FROM people WHERE name = ?').bind(person.name).first();
-    return json({ ok: true, token: await makeToken(env, person.name), revealed: !!row?.revealed_at });
+
+    const device = await env.DB.prepare('SELECT name FROM devices WHERE key_hash = ?').bind(keyHash).first();
+    if (device && device.name !== person.name) {
+      return json({ error: `Ce téléphone a déjà servi à piocher pour ${device.name}. Un téléphone, un seul tirage.`, reason: 'device', name: device.name }, 403);
+    }
+    let claim = await env.DB.prepare('SELECT key_hash FROM claims WHERE name = ?').bind(person.name).first();
+    if (!claim) {
+      await env.DB.batch([
+        env.DB.prepare('INSERT OR IGNORE INTO claims (name, key_hash, code, at) VALUES (?, ?, ?, ?)').bind(person.name, keyHash, newCode(), Date.now()),
+      ]);
+      claim = await env.DB.prepare('SELECT key_hash FROM claims WHERE name = ?').bind(person.name).first();
+    }
+    if (claim.key_hash !== keyHash) {
+      return json({ error: 'Ce prénom est déjà utilisé sur un autre téléphone. Si c\'est bien toi, entre ton code personnel.', reason: 'claimed' }, 409);
+    }
+    await env.DB.prepare('INSERT OR IGNORE INTO devices (key_hash, name) VALUES (?, ?)').bind(keyHash, person.name).run();
+    return json({ ok: true, token: await makeToken(env, person.name, keyHash) });
+  }
+
+  // Récupération sur un nouveau téléphone grâce au code personnel affiché sous le tirage.
+  if (route === 'POST /api/unlock') {
+    const keyHash = await deviceHash(request);
+    if (!keyHash) return json({ error: 'Ton navigateur bloque une fonction nécessaire. Essaie avec un autre navigateur.' }, 400);
+    const body = await readBody(request);
+    const person = findPerson(env, body.name);
+    if (!person) return json({ error: 'Ce prénom ne fait pas partie de la liste.' }, 404);
+    const device = await env.DB.prepare('SELECT name FROM devices WHERE key_hash = ?').bind(keyHash).first();
+    if (device && device.name !== person.name) {
+      return json({ error: `Ce téléphone a déjà servi à piocher pour ${device.name}.`, reason: 'device', name: device.name }, 403);
+    }
+    const claim = await env.DB.prepare('SELECT code, fails, locked_until FROM claims WHERE name = ?').bind(person.name).first();
+    if (!claim) return json({ error: 'Rien à débloquer pour ce prénom.' }, 404);
+    const now = Date.now();
+    if (claim.locked_until > now) return json({ error: 'Trop d\'essais. Réessaie dans une heure.' }, 429);
+    const code = String(body.code || '').toUpperCase().replace(/[^A-Z0-9]/g, '');
+    if (code !== claim.code) {
+      const fails = claim.fails + 1;
+      const lock = fails >= 8 ? now + 3600 * 1000 : 0;
+      await env.DB.prepare('UPDATE claims SET fails = ?, locked_until = ? WHERE name = ?').bind(lock ? 0 : fails, lock, person.name).run();
+      return json({ error: 'Ce code ne correspond pas.' }, 401);
+    }
+    await env.DB.batch([
+      env.DB.prepare('DELETE FROM devices WHERE name = ?').bind(person.name),
+      env.DB.prepare('UPDATE claims SET key_hash = ?, fails = 0, locked_until = 0 WHERE name = ?').bind(keyHash, person.name),
+      env.DB.prepare('INSERT OR REPLACE INTO devices (key_hash, name) VALUES (?, ?)').bind(keyHash, person.name),
+    ]);
+    return json({ ok: true, token: await makeToken(env, person.name, keyHash) });
   }
 
   if (route === 'POST /api/reveal') {
-    const name = await readToken(env, request);
+    const keyHash = await deviceHash(request);
+    const name = await readToken(env, request, keyHash);
     if (!name) return json({ error: 'Session expirée. Choisis ton prénom à nouveau.' }, 401);
+    const claim = await env.DB.prepare('SELECT key_hash, code FROM claims WHERE name = ?').bind(name).first();
+    if (!claim || claim.key_hash !== keyHash) return json({ error: 'Session expirée. Choisis ton prénom à nouveau.' }, 401);
     const pairs = await getDraw(env);
-    const target = pairs[name];
     const me = await env.DB.prepare('SELECT revealed_at FROM people WHERE name = ?').bind(name).first();
     const firstTime = !me.revealed_at;
     if (firstTime) {
       await env.DB.prepare('UPDATE people SET revealed_at = ? WHERE name = ? AND revealed_at IS NULL').bind(Date.now(), name).run();
     }
-    return json({ name, target, firstTime });
+    return json({ name, target: pairs[name], firstTime, code: claim.code });
   }
 
   return json({ error: 'Page introuvable.' }, 404);

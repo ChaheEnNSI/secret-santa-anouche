@@ -30,11 +30,14 @@
     await new Promise((r) => setTimeout(r, 120));
 
     if (route === 'state') {
-      return json({ event: { date: '2026-12-20', label: 'Dimanche 20 décembre' }, people: NAMES.map((n) => ({ name: n, revealed: !!db.revealed[n] })) });
+      return json({ event: { date: '2026-12-20', label: 'Dimanche 20 décembre' }, people: NAMES.map((n) => ({ name: n })) });
     }
     if (route === 'enter') {
       if (!NAMES.includes(body.name)) return json({ error: 'Ce prénom ne fait pas partie de la liste.' }, 404);
-      return json({ ok: true, token: body.name, revealed: !!db.revealed[body.name] });
+      if (db.device && db.device !== body.name) return json({ error: `Ce téléphone a déjà servi à piocher pour ${db.device}. Un téléphone, un seul tirage.`, reason: 'device', name: db.device }, 403);
+      db.device = body.name;
+      save();
+      return json({ ok: true, token: body.name });
     }
     if (route === 'reveal') {
       if (!me) return json({ error: 'Session expirée. Choisis ton prénom à nouveau.' }, 401);
@@ -43,7 +46,7 @@
       db.revealed[me] = true;
       save();
       const target = db.draw[me];
-      return json({ name: me, target, firstTime });
+      return json({ name: me, target, firstTime, code: 'K7Q2' });
     }
     return json({ error: 'Page introuvable.' }, 404);
   };

@@ -12,9 +12,19 @@ const store = {
   del: (k) => { try { localStorage.removeItem(`santa:${k}`); } catch { /* ignoré */ } },
 };
 
+// Identifiant aléatoire de ce téléphone (un téléphone = un seul tirage).
+function deviceKey() {
+  let k = store.get('device');
+  if (!k) {
+    k = (crypto.randomUUID?.() || Array.from(crypto.getRandomValues(new Uint8Array(16)), (b) => b.toString(16).padStart(2, '0')).join('')).replace(/[^A-Za-z0-9-]/g, '');
+    store.set('device', k);
+  }
+  return k;
+}
+
 // ---------- Appels au serveur ----------
 async function api(path, { method = 'GET', body } = {}) {
-  const headers = { 'content-type': 'application/json' };
+  const headers = { 'content-type': 'application/json', 'x-device': deviceKey() };
   const token = store.get('token');
   if (token) headers.authorization = `Bearer ${token}`;
   let res;
@@ -85,9 +95,7 @@ window.addEventListener('pointermove', (e) => {
 
 // ---------- Guirlande : une ampoule par participant ----------
 const BULB_COLORS = ['#f2c14e', '#e5484d', '#fff4dc', '#57b98a'];
-const litNames = () => new Set(state.people.filter((p) => p.revealed).map((p) => p.name));
-
-function drawGarland(lit = new Set()) {
+function drawGarland() {
   const svg = $('#garland');
   const w = Math.max(320, window.innerWidth);
   const h = svg.getBoundingClientRect().height || 84;
@@ -104,28 +112,28 @@ function drawGarland(lit = new Set()) {
   let html = '';
   for (let i = 0; i < n; i++) {
     const p = path.getPointAtLength(margin + step * i);
-    const person = state.people[i];
-    const on = person && lit.has(person.name);
-    html += `<g class="bulb${on ? ' is-lit' : ''}" data-index="${i}" style="--c:${BULB_COLORS[i % 4]};--d:${((i * 0.37) % 2.2).toFixed(2)}s" transform="translate(${p.x.toFixed(1)} ${p.y.toFixed(1)})"><circle class="bulb__halo" cx="0" cy="14" r="13" filter="url(#halo)"/><rect class="bulb__cap" x="-3.5" y="0" width="7" height="6" rx="1.5"/><path class="bulb__glass" d="M0 5 C 6 7, 7 16, 0 23 C -7 16, -6 7, 0 5 Z"/></g>`;
+    html += `<g class="bulb is-lit" data-index="${i}" style="--c:${BULB_COLORS[i % 4]};--d:${((i * 0.37) % 2.2).toFixed(2)}s" transform="translate(${p.x.toFixed(1)} ${p.y.toFixed(1)})"><circle class="bulb__halo" cx="0" cy="14" r="13" filter="url(#halo)"/><rect class="bulb__cap" x="-3.5" y="0" width="7" height="6" rx="1.5"/><path class="bulb__glass" d="M0 5 C 6 7, 7 16, 0 23 C -7 16, -6 7, 0 5 Z"/></g>`;
   }
   svg.insertAdjacentHTML('beforeend', html);
 }
 
-async function lightGarland() {
-  const lit = litNames();
-  drawGarland(new Set());
-  if (reduceMotion) { drawGarland(lit); return; }
-  await wait(700);
-  for (const bulb of document.querySelectorAll('.bulb')) {
-    const person = state.people[Number(bulb.dataset.index)];
-    if (person && lit.has(person.name)) { bulb.classList.add('is-lit'); await wait(150); }
-  }
-}
+// Chaque ampoule joue une note quand on la touche.
+$('#garland').addEventListener('pointerdown', (e) => {
+  const bulb = e.target.closest('.bulb');
+  if (!bulb) return;
+  sound.unlock();
+  sound.note(Number(bulb.dataset.index));
+  bulb.classList.remove('is-ping');
+  void bulb.getBoundingClientRect();
+  bulb.classList.add('is-ping');
+  const r = bulb.getBoundingClientRect();
+  overlay.sparkle(r.left + r.width / 2, r.top + r.height, 8, 10);
+});
 
 let resizeTimer;
 window.addEventListener('resize', () => {
   clearTimeout(resizeTimer);
-  resizeTimer = setTimeout(() => drawGarland(litNames()), 150);
+  resizeTimer = setTimeout(drawGarland, 150);
 });
 
 // ---------- Accueil ----------
@@ -142,17 +150,21 @@ function renderCountdown() {
   $('#countdown').textContent = days > 1 ? `Plus que ${days} jours` : days === 1 ? 'C\'est demain !' : days === 0 ? 'C\'est aujourd\'hui !' : 'C\'était le 20 décembre';
 }
 
-function renderProgress() {
-  const total = state.people.length;
-  const done = state.people.filter((p) => p.revealed).length;
-  $('#progress').textContent =
-    done === 0 ? 'Personne n\'a encore pioché. À toi de commencer !' :
-    done === total ? 'Tout le monde a pioché. Rendez-vous le 20 décembre !' :
-    done === 1 ? `1 sur ${total} a déjà pioché.` : `${done} sur ${total} ont déjà pioché.`;
+function renderMe() {
+  const name = store.get('name');
+  const mine = store.get('token') && state.people.some((p) => p.name === name);
+  $('#picker').hidden = !!mine;
+  $('#me').hidden = !mine;
+  if (mine) {
+    $('#me-name').textContent = name;
+    const done = store.get('revealed') === '1';
+    $('#me-text').textContent = done ? 'Tu as déjà pioché. Un téléphone, un seul tirage.' : 'Ton cadeau t\'attend.';
+    $('#me-btn').textContent = done ? 'Revoir qui j\'ai pioché' : 'Ouvrir mon cadeau';
+  }
 }
+$('#me-btn').addEventListener('click', () => openGiftScreen());
 
 // Étiquettes suspendues : petit moteur de balancier (ressort amorti).
-const STAR = '<svg viewBox="0 0 24 24" aria-hidden="true"><path d="M12 2.5l2.9 6.1 6.6.8-4.9 4.6 1.3 6.6L12 17.3l-5.9 3.3 1.3-6.6-4.9-4.6 6.6-.8z"/></svg>';
 let swings = [];
 let swingRaf = 0;
 let swingLast = 0;
@@ -199,19 +211,20 @@ function renderTags({ drop = false } = {}) {
     name.className = 'tag__name';
     name.textContent = person.name;
     btn.append(name);
-    if (person.revealed) {
-      const st = document.createElement('span');
-      st.className = 'tag__state';
-      st.innerHTML = `${STAR}<span>a déjà pioché</span>`;
-      btn.append(st);
-      btn.setAttribute('aria-label', `${person.name}, a déjà pioché`);
-    }
     const s = { el: swing, base: rand(-2.5, 2.5), a: 0, v: 0 };
     s.a = drop && !reduceMotion ? s.base + (index % 2 ? 1 : -1) * rand(16, 26) : s.base;
     swing.style.transform = `rotate(${s.a.toFixed(2)}deg)`;
     swings.push(s);
     btn.addEventListener('pointerdown', () => { s.v += (index % 2 ? -1 : 1) * 1.6; runSwings(); });
-    btn.addEventListener('click', () => selectName(person.name, btn));
+    btn.addEventListener('click', async () => {
+      if (btn.classList.contains('is-picked')) return;
+      btn.classList.add('is-picked');
+      sound.unlock();
+      sound.note(index);
+      await wait(reduceMotion ? 0 : 380);
+      btn.classList.remove('is-picked');
+      selectName(person.name, btn);
+    });
     swing.append(btn);
     li.append(pin, swing);
     if (drop && !reduceMotion) li.animate([{ opacity: 0, transform: 'translateY(-26px)' }, { opacity: 1, transform: 'none' }], { duration: 650, delay: 250 + index * 70, easing: 'cubic-bezier(0.2, 0.8, 0.2, 1)', fill: 'backwards' });
@@ -225,13 +238,13 @@ async function loadState({ drop = false } = {}) {
   state.people = data.people;
   state.event = data.event;
   renderCountdown();
-  renderProgress();
   renderTags({ drop });
+  renderMe();
 }
 
 async function goHome({ push = true } = {}) {
   show('home', { push });
-  try { await loadState(); drawGarland(litNames()); } catch { /* on garde l'affichage précédent */ }
+  try { await loadState(); } catch { renderMe(); }
 }
 
 // ---------- Contrôle d'identité (scanner d'empreinte, pour rire) ----------
@@ -265,10 +278,10 @@ function resetCheck(name) {
   scanner.disabled = false;
   checkDone.hidden = true;
   setScan('Pose ton pouce ici et laisse-le appuyé');
-  const person = state.people.find((p) => p.name === name);
-  const warn = $('#check-warn');
-  warn.hidden = !person?.revealed;
-  if (person?.revealed) warn.textContent = `${name} a déjà ouvert son cadeau. Si c'est toi, scanne ton pouce pour le revoir. Sinon, repose ce téléphone : les lutins prennent des notes.`;
+  $('#check-warn').hidden = true;
+  $('#unlock').hidden = true;
+  $('#code-input').value = '';
+  setUnlock('');
   $('#fineprint').textContent = `En continuant, tu certifies sur l'honneur être ${name}. Toute usurpation sera punie d'un cadeau acheté au tabac du coin.`;
 }
 
@@ -313,9 +326,7 @@ async function finishScan() {
   scanner.classList.remove('is-scanning');
   try {
     const data = await api('enter', { method: 'POST', body: { name: state.selected } });
-    store.set('token', data.token);
-    store.set('name', state.selected);
-    state.reveal = null;
+    signIn(data.token, state.selected);
     scanner.classList.add('is-done');
     scanner.disabled = true;
     check.classList.add('is-verified');
@@ -326,14 +337,56 @@ async function finishScan() {
     overlay.sparkle(r.left + r.width / 2, r.top + r.height / 2, 26, r.width * 0.45);
     checkDone.hidden = false;
   } catch (err) {
-    hold.done = false;
     check.classList.add('is-reset');
     check.style.setProperty('--p', 0);
-    setScan(err.message, 'error');
+    const reason = err.data?.reason;
+    if (reason === 'device') {
+      // Ce téléphone a déjà servi pour quelqu'un d'autre : on le ramène à son propre tirage.
+      setScan(err.message, 'error');
+      scanner.disabled = true;
+      store.set('name', err.data.name);
+    } else if (reason === 'claimed') {
+      setScan(err.message, 'error');
+      scanner.disabled = true;
+      $('#unlock').hidden = false;
+    } else {
+      hold.done = false;
+      setScan(err.message, 'error');
+    }
   } finally {
     hold.busy = false;
   }
 }
+
+function signIn(token, name) {
+  store.set('token', token);
+  store.set('name', name);
+  store.del('revealed');
+  state.reveal = null;
+}
+
+function setUnlock(text, kind = '') {
+  const el = $('#unlock-status');
+  el.textContent = text;
+  el.className = `status${kind ? ` is-${kind}` : ''}`;
+}
+
+$('#unlock').addEventListener('submit', async (e) => {
+  e.preventDefault();
+  const code = $('#code-input').value.trim();
+  if (!code) { setUnlock('Écris ton code à 4 caractères.', 'error'); return; }
+  try {
+    const data = await api('unlock', { method: 'POST', body: { name: state.selected, code } });
+    signIn(data.token, state.selected);
+    store.set('revealed', '1');
+    setUnlock('Débloqué !', 'ok');
+    sound.seal();
+    await wait(500);
+    openGiftScreen();
+  } catch (err) {
+    setUnlock(err.message, 'error');
+  }
+});
 
 scanner.addEventListener('pointerdown', (e) => { scanner.setPointerCapture?.(e.pointerId); startHold(e); });
 scanner.addEventListener('pointerup', stopHold);
@@ -347,6 +400,7 @@ $('#enter-btn').addEventListener('click', () => openGiftScreen());
 async function selectName(name, tagEl) {
   state.selected = name;
   if (store.get('token') && store.get('name') === name) { openGiftScreen(); return; }
+  if (store.get('token')) { renderMe(); return; }
   const qName = $('#q-name');
   qName.textContent = name;
   resetCheck(name);
@@ -366,7 +420,7 @@ async function selectName(name, tagEl) {
   }
 }
 
-// ---------- Cadeau en 3D ----------
+// ---------- Cadeau en 3D, qui résiste ----------
 const gift = $('#gift');
 const cube = $('#cube');
 const reveal = $('#reveal');
@@ -374,25 +428,59 @@ const revealName = $('#reveal-name');
 const after = $('#after');
 const stage = $('#stage');
 const flash = $('#flash');
-const spin = { raf: 0, ry: -28, vel: 0, dragging: false, lastX: 0, moved: 0, t0: performance.now(), shaking: false };
+const orbs = [...document.querySelectorAll('.orb')];
+const spin = {
+  raf: 0, ry: -28, vel: 0, dragging: false, lastX: 0, moved: 0, t0: performance.now(), shaking: false,
+  taps: 0, needed: 6, tapAt: -9999, lift: 0, charge: 0, prefetch: null,
+};
+const TAP_LINES = ['Encore !', 'Il craque…', 'Continue !', 'Ça vient…', 'Il cède presque…', 'Encore un peu !', 'Dernier effort !'];
 
 function giftLoop(now) {
   if (current !== 'gift' || gift.hidden) { spin.raf = 0; return; }
   const t = (now - spin.t0) / 1000;
   if (!spin.dragging) {
     spin.ry += spin.vel;
-    spin.vel *= 0.94;
+    spin.vel *= 0.93;
     if (Math.abs(spin.vel) < 0.4) {
       const target = -28 + Math.sin(t * 0.8) * 16;
       const diff = ((target - spin.ry + 540) % 360) - 180;
       spin.ry += diff * 0.025;
     }
   }
-  let rz = 0;
-  if (spin.shaking) { rz = Math.sin(now / 28) * 6; spin.ry += Math.sin(now / 40) * 1.6; }
+  // Coup sur la boîte : écrasement, saut, étirement, retombée avec rebond.
+  const d = now - spin.tapAt;
+  let jump = 0, sx = 1, sy = 1, rz = 0;
+  const H = 16 + spin.taps * 3;
+  if (d < 80) { const k = d / 80; sy = 1 - 0.2 * k; sx = 1 + 0.12 * k; }
+  else if (d < 440) { const k = (d - 80) / 360; jump = -H * Math.sin(Math.PI * k); sy = 1 + 0.12 * Math.sin(Math.PI * k); sx = 1 - 0.06 * Math.sin(Math.PI * k); }
+  else if (d < 600) { const k = Math.sin(Math.PI * (d - 440) / 160); sy = 1 - 0.13 * k; sx = 1 + 0.08 * k; }
+  else if (d < 760) { const k = (d - 600) / 160; jump = -5 * Math.sin(Math.PI * k); }
+  if (d < 900) rz = Math.sin(d / 38) * 9 * Math.exp(-d / 320);
+  if (spin.shaking) { rz += Math.sin(now / 26) * 6; spin.ry += Math.sin(now / 40) * 1.8; }
+  // Le couvercle se soulève un peu plus à chaque coup, la lumière monte.
+  const bump = d < 500 ? Math.sin(Math.PI * Math.min(1, d / 500)) * 12 : 0;
+  const lift = spin.lift + bump;
+  const glow = Math.min(1, spin.charge * 0.9 + bump / 40);
   cube.style.setProperty('--ry', `${spin.ry.toFixed(2)}deg`);
   cube.style.setProperty('--rz', `${rz.toFixed(2)}deg`);
-  cube.style.setProperty('--bob', `${(Math.sin(t * 1.6) * 5).toFixed(2)}px`);
+  cube.style.setProperty('--bob', `${(Math.sin(t * 1.6) * 5 + jump).toFixed(2)}px`);
+  cube.style.setProperty('--sx', sx.toFixed(3));
+  cube.style.setProperty('--sy', sy.toFixed(3));
+  gift.style.setProperty('--lift', `${lift.toFixed(1)}px`);
+  gift.style.setProperty('--ltilt', `${(Math.sin(d / 45) * 4 * Math.exp(-d / 300) * (spin.taps ? 1 : 0)).toFixed(2)}deg`);
+  gift.style.setProperty('--glow', glow.toFixed(3));
+  // Lucioles qui tournent autour du cadeau, devant puis derrière.
+  const cx = gift.clientWidth / 2;
+  orbs.forEach((o, i) => {
+    const a = t * (0.9 + spin.charge * 1.4) + (i / orbs.length) * Math.PI * 2;
+    const R = 118 + Math.sin(t * 1.3 + i) * 10;
+    const y = 160 + Math.sin(a) * 26 + Math.sin(t * 2 + i * 1.7) * 18 - 40;
+    const z = Math.sin(a);
+    const sc = 0.65 + (z + 1) * 0.35;
+    o.style.transform = `translate3d(${(cx + Math.cos(a) * R).toFixed(1)}px, ${y.toFixed(1)}px, 0) scale(${sc.toFixed(2)})`;
+    o.style.opacity = (0.35 + (z + 1) * 0.32).toFixed(2);
+    o.style.zIndex = z > 0 ? 3 : 0;
+  });
   spin.raf = requestAnimationFrame(giftLoop);
 }
 function startGiftLoop() {
@@ -424,14 +512,45 @@ function endDrag() {
   gift.classList.remove('is-dragging');
   return true;
 }
-gift.addEventListener('pointerup', () => { if (endDrag() && spin.moved < 8) openGift(); });
+gift.addEventListener('pointerup', () => { if (endDrag() && spin.moved < 8) tapGift(); });
 gift.addEventListener('pointercancel', endDrag);
-gift.addEventListener('click', (e) => { if (e.detail === 0) openGift(); }); // clavier
+gift.addEventListener('click', (e) => { if (e.detail === 0) tapGift(); }); // clavier
+
+function renderTapDots() {
+  $('#taps').innerHTML = Array.from({ length: spin.needed }, (_, i) => `<i class="${i < spin.taps ? 'is-on' : ''}"></i>`).join('');
+}
+
+function tapGift() {
+  if (state.opening || gift.classList.contains('is-open')) return;
+  sound.unlock();
+  spin.taps += 1;
+  spin.tapAt = performance.now();
+  spin.charge = spin.taps / spin.needed;
+  spin.lift = spin.charge * 16;
+  spin.vel += (Math.random() < 0.5 ? -1 : 1) * rand(6, 11);
+  stage.style.setProperty('--charge', spin.charge.toFixed(2));
+  if (spin.taps === 1 && !state.reveal) spin.prefetch = api('reveal', { method: 'POST' }).catch((err) => err);
+  renderTapDots();
+  sound.thump(spin.taps);
+  navigator.vibrate?.(12 + spin.taps * 5);
+  // Onde au sol et étincelles qui s'échappent par le couvercle.
+  const shock = document.createElement('span');
+  shock.className = 'shock';
+  gift.append(shock);
+  shock.addEventListener('animationend', () => shock.remove());
+  const g = gift.getBoundingClientRect();
+  overlay.sparkle(g.left + g.width / 2, g.top + 120, 10 + spin.taps * 4, 50 + spin.taps * 6);
+  if (spin.taps > spin.needed / 2) stage.animate([{ transform: 'translate(0,0)' }, { transform: 'translate(-4px,1px)' }, { transform: 'translate(4px,-1px)' }, { transform: 'translate(0,0)' }], { duration: 180 });
+  const hint = $('#gift-hint');
+  if (spin.taps >= spin.needed) { hint.textContent = ''; setTimeout(openGift, 260); return; }
+  hint.textContent = spin.taps === 1 ? 'Il résiste ! Tape plusieurs fois pour le forcer.' : TAP_LINES[(spin.taps - 2) % TAP_LINES.length];
+}
 
 function resetGift() {
   gift.hidden = false;
   gift.classList.remove('is-open', 'is-gone', 'is-dragging');
   stage.classList.remove('is-opened', 'is-named');
+  stage.style.setProperty('--charge', 0);
   reveal.hidden = true;
   reveal.classList.remove('is-in', 'is-named', 'is-tilting');
   revealName.textContent = '';
@@ -439,7 +558,8 @@ function resetGift() {
   $('#gift-title').textContent = 'Ton cadeau t\'attend';
   $('#gift-hint').hidden = false;
   $('#gift-hint').textContent = 'Fais-le tourner du doigt, puis touche-le pour l\'ouvrir.';
-  spin.ry = -28; spin.vel = 0; spin.shaking = false;
+  Object.assign(spin, { ry: -28, vel: 0, shaking: false, taps: 0, needed: 5 + Math.floor(Math.random() * 4), tapAt: -9999, lift: 0, charge: 0, prefetch: null });
+  renderTapDots();
   state.opening = false;
 }
 
@@ -447,8 +567,7 @@ async function openGiftScreen() {
   resetGift();
   show('gift');
   startGiftLoop();
-  const me = state.people.find((p) => p.name === store.get('name'));
-  if (me?.revealed) {
+  if (store.get('revealed') === '1') {
     try { state.reveal = await api('reveal', { method: 'POST' }); showResultInstantly(state.reveal); } catch (err) { handleRevealError(err); }
   }
 }
@@ -456,19 +575,14 @@ async function openGiftScreen() {
 function handleRevealError(err) {
   spin.shaking = false;
   state.opening = false;
-  if (err.status === 401) { store.del('token'); store.del('name'); goHome(); return; }
+  if (err.status === 401) { store.del('token'); store.del('name'); store.del('revealed'); goHome(); return; }
   $('#gift-hint').textContent = err.message;
 }
 
 // Position finale (sans les transformations en cours) du prénom dans la carte.
 function finalNameRect() {
   const s = stage.getBoundingClientRect();
-  return {
-    left: s.left + reveal.offsetLeft + revealName.offsetLeft,
-    top: s.top + reveal.offsetTop + revealName.offsetTop,
-    width: revealName.offsetWidth,
-    height: revealName.offsetHeight,
-  };
+  return { left: s.left + reveal.offsetLeft + revealName.offsetLeft, top: s.top + reveal.offsetTop + revealName.offsetTop, width: revealName.offsetWidth, height: revealName.offsetHeight };
 }
 
 async function openGift() {
@@ -476,31 +590,31 @@ async function openGift() {
   state.opening = true;
   sound.unlock();
   spin.shaking = true;
-  $('#gift-hint').textContent = 'Ça bouge…';
   let data;
   try {
-    [data] = await Promise.all([state.reveal ? Promise.resolve(state.reveal) : api('reveal', { method: 'POST' }), wait(reduceMotion ? 0 : 900)]);
+    const pending = state.reveal ? Promise.resolve(state.reveal) : spin.prefetch ? spin.prefetch : api('reveal', { method: 'POST' });
+    [data] = await Promise.all([pending, wait(reduceMotion ? 0 : 450)]);
+    if (data instanceof Error) throw data;
   } catch (err) { handleRevealError(err); return; }
   state.reveal = data;
-  const me = state.people.find((p) => p.name === data.name);
-  if (me) me.revealed = true;
+  store.set('revealed', '1');
   spin.shaking = false;
 
   if (reduceMotion) { showResultInstantly(data); return; }
 
   // 1. Le couvercle s'envole, la lumière jaillit.
-  $('#gift-hint').textContent = '';
   gift.classList.add('is-open');
   stage.classList.add('is-opened');
   sound.whoosh();
-  navigator.vibrate?.(30);
+  navigator.vibrate?.(40);
   const g = gift.getBoundingClientRect();
   const ox = g.left + g.width / 2;
   const oy = g.top + 118;
-  overlay.sparkle(ox, oy, 46, 70);
+  overlay.sparkle(ox, oy, 60, 80);
+  overlay.burst(ox, oy, 60, 0.7);
   await wait(450);
 
-  // 2. La carte arrive, les étincelles tourbillonnent puis forment le prénom.
+  // 2. La carte se redresse, les étincelles tourbillonnent puis forment le prénom.
   revealName.textContent = data.target;
   reveal.hidden = false;
   const rect = finalNameRect();
@@ -524,7 +638,7 @@ async function openGift() {
   const r = reveal.getBoundingClientRect();
   overlay.burst(r.left + r.width / 2, r.top + r.height * 0.45, 120, 0.8);
   const W = window.innerWidth;
-  [[0.22, 0.2, 'gold', 150], [0.78, 0.16, 'red', 450], [0.5, 0.1, 'white', 800], [0.3, 0.12, 'gold', 1150]].forEach(([fx, fy, tone, delay]) => {
+  [[0.22, 0.2, 'gold', 150], [0.78, 0.16, 'red', 450], [0.5, 0.1, 'white', 800], [0.3, 0.12, 'gold', 1150], [0.7, 0.22, 'gold', 1500]].forEach(([fx, fy, tone, delay]) => {
     setTimeout(() => { overlay.firework(W * fx, window.innerHeight * fy + 60, tone); sound.pop(); }, delay);
   });
   finishReveal(data);
@@ -539,9 +653,10 @@ function showResultInstantly(data) {
   finishReveal(data);
 }
 
-function finishReveal() {
+function finishReveal(data) {
   $('#gift-title').textContent = 'C\'est pioché !';
   $('#gift-hint').hidden = true;
+  $('#my-code').textContent = data.code || '';
   after.hidden = false;
   state.opening = false;
 }
@@ -587,12 +702,6 @@ document.addEventListener('click', (e) => {
     startGiftLoop();
     window.scrollTo({ top: 0, behavior: reduceMotion ? 'auto' : 'smooth' });
   }
-  if (action === 'logout') {
-    store.del('token');
-    store.del('name');
-    state.reveal = null;
-    goHome();
-  }
 });
 
 // ---------- Démarrage ----------
@@ -600,17 +709,11 @@ startSnow($('#snow'));
 try { history.replaceState({ screen: 'home' }, ''); } catch { /* cadre restreint */ }
 
 (async function init() {
+  drawGarland();
+  setTimeout(() => $('.title').classList.add('is-written'), 3600);
   try {
     await loadState({ drop: true });
   } catch (err) {
     $('#progress').textContent = err.message;
-    drawGarland();
-    return;
-  }
-  lightGarland();
-  const name = store.get('name');
-  if (store.get('token') && state.people.some((p) => p.name === name)) {
-    state.selected = name;
-    openGiftScreen();
   }
 })();

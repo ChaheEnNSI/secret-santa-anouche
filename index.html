@@ -24,6 +24,25 @@
     <div class="aurora"><span></span><span></span><span></span></div>
     <div class="stars" id="stars"></div>
     <div class="moon"></div>
+    <span class="shoot"></span><span class="shoot"></span>
+    <svg class="sleigh" viewBox="0 0 220 60">
+      <g fill="#04110c">
+        <g transform="translate(131 0) scale(-1 1)">
+        <path d="M6 30c4-3 10-4 16-2l3-6 2 1-2 6c2 1 3 3 3 5l-3 1-1 9h-2l0-8h-9l-2 8h-2l1-9c-3-1-4-3-4-5z"/>
+        <path d="M23 21l-2-7m2 7l3-6m-5-1l-3-2m6 3l3-3" stroke="#04110c" stroke-width="1.4" fill="none"/>
+        <path d="M52 30c4-3 10-4 16-2l3-6 2 1-2 6c2 1 3 3 3 5l-3 1-1 9h-2l0-8h-9l-2 8h-2l1-9c-3-1-4-3-4-5z"/>
+        <path d="M69 21l-2-7m2 7l3-6m-5-1l-3-2m6 3l3-3" stroke="#04110c" stroke-width="1.4" fill="none"/>
+        <path d="M98 30c4-3 10-4 16-2l3-6 2 1-2 6c2 1 3 3 3 5l-3 1-1 9h-2l0-8h-9l-2 8h-2l1-9c-3-1-4-3-4-5z"/>
+        <path d="M115 21l-2-7m2 7l3-6m-5-1l-3-2m6 3l3-3" stroke="#04110c" stroke-width="1.4" fill="none"/>
+        </g>
+        <path d="M28 31l24 0m22 0l24 0m22 0l26 4" stroke="#04110c" stroke-width="1" fill="none"/>
+        <path d="M146 28h40c6 0 8-4 9-10l1-4h5l-2 7c-2 9-6 13-14 13h-36z"/>
+        <circle cx="168" cy="14" r="5"/>
+        <path d="M160 28c0-8 3-11 8-11s8 3 8 11z"/>
+        <path d="M142 42h52c6 0 9-3 10-7" stroke="#04110c" stroke-width="2.2" fill="none" stroke-linecap="round"/>
+        <path d="M152 34v8m30-8v8" stroke="#04110c" stroke-width="1.6"/>
+      </g>
+    </svg>
     <svg class="scene__layer scene__far" viewBox="0 0 1200 260" preserveAspectRatio="xMidYMax slice">
       <path fill="#163a33" d="M0 260V150l70-46 60 30 90-78 70 52 50-24 110 92 80-64 70 40 90-86 100 80 60-30 90 60 70-38 90 54V260z"/>
       <path fill="rgba(247,242,231,0.26)" d="M220 56L196 77L204 73L211 79L219 72L228 78L236 72L244 74ZM690 66L666 89L674 84L682 90L690 83L699 89L707 83L714 85ZM340 84L320 94L328 93L334 98L341 92L348 98L355 95L360 101ZM70 104L50 117L58 114L65 119L72 113L80 118L90 114Z"/>
@@ -101,9 +120,17 @@
         <p class="progress" id="progress" aria-live="polite"></p>
       </header>
 
-      <h2 class="who">Qui es-tu&#8239;?</h2>
-      <ul class="tags" id="tags" aria-label="Participants"></ul>
-      <p class="hint">Touche ton prénom pour découvrir qui tu as pioché.</p>
+      <div class="picker" id="picker">
+        <h2 class="who">Qui es-tu&#8239;?</h2>
+        <ul class="tags" id="tags" aria-label="Participants"></ul>
+        <p class="hint">Touche ton prénom pour découvrir qui tu as pioché.</p>
+      </div>
+
+      <div class="card me" id="me" hidden>
+        <p class="me__hello">Tu es <span id="me-name"></span></p>
+        <p class="me__text" id="me-text">Un téléphone, un seul tirage.</p>
+        <button class="btn" id="me-btn" type="button">Revoir qui j'ai pioché</button>
+      </div>
     </section>
 
     <!-- Contrôle d'identité (pour rire) -->
@@ -150,6 +177,13 @@
 
         <p class="scan-status" id="scan-status" role="status" aria-live="polite">Pose ton pouce ici et laisse-le appuyé</p>
 
+        <form class="unlock" id="unlock" hidden novalidate>
+          <label class="unlock__label" for="code-input">Ton code personnel est affiché sous ton tirage, sur le téléphone où tu l'as ouvert.</label>
+          <input class="field field--code" id="code-input" maxlength="4" autocomplete="off" autocapitalize="characters" autocorrect="off" spellcheck="false" placeholder="Code">
+          <button class="btn" type="submit">Débloquer</button>
+          <p class="status" id="unlock-status" role="status" aria-live="polite"></p>
+        </form>
+
         <div class="check__done" id="check-done" hidden>
           <button class="btn" id="enter-btn" type="button">Ouvrir mon cadeau</button>
           <p class="fineprint" id="fineprint"></p>
@@ -169,7 +203,7 @@
         </button>
       </div>
       <h2 class="gift-title" id="gift-title">Ton cadeau t'attend</h2>
-      <p class="lead" id="gift-hint">Fais-le tourner du doigt, puis touche-le pour l'ouvrir.</p>
+      <p class="lead" id="gift-hint" aria-live="polite">Fais-le tourner du doigt, puis touche-le pour l'ouvrir.</p>
 
       <div class="stage" id="stage">
         <span class="rays" aria-hidden="true"></span>
@@ -194,6 +228,8 @@
             </span>
           </span>
           <span class="g3-beam" aria-hidden="true"></span>
+          <span class="orb"></span><span class="orb"></span><span class="orb"></span><span class="orb"></span><span class="orb"></span><span class="orb"></span>
+          <span class="taps" id="taps" aria-hidden="true"></span>
         </button>
 
         <div class="reveal" id="reveal" hidden>
@@ -207,9 +243,9 @@
       </div>
 
       <div class="after" id="after" hidden>
+        <p class="mycode">Ton code personnel&nbsp;: <strong id="my-code"></strong><span>Il sert uniquement à revoir ton tirage sur un autre téléphone. Garde-le pour toi.</span></p>
         <div class="links">
           <button class="link" type="button" data-action="replay">Revoir l'ouverture du cadeau</button>
-          <button class="link" type="button" data-action="logout">Pas ton téléphone ? Se déconnecter</button>
         </div>
       </div>
     </section>
