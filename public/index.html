@@ -32,7 +32,7 @@
         <p class="progress" id="progress" aria-live="polite"></p>
       </header>
 
-      <h2 class="who">Qui es-tu ?</h2>
+      <h2 class="who">Qui es-tu&#8239;?</h2>
       <ul class="tags" id="tags" aria-label="Participants"></ul>
       <p class="hint">Touche ton prénom pour découvrir à qui tu offres un cadeau.</p>
     </section>
@@ -43,10 +43,11 @@
         <svg viewBox="0 0 24 24" aria-hidden="true"><path d="M14.5 5.5L8 12l6.5 6.5"/></svg>
         Changer de prénom
       </button>
-      <h2 class="hello">Salut <span id="q-name"></span></h2>
-      <p class="lead">Réponds à ta question pour montrer que c'est bien toi.</p>
+      <h2 class="hello">Salut <span class="hello__name" id="q-name"></span></h2>
+      <p class="lead">Vérifions que c'est bien toi.</p>
 
       <form class="card ask" id="answer-form" novalidate>
+        <span class="seal" aria-hidden="true"><svg viewBox="0 0 24 24"><path d="M6.5 12.5l3.5 3.5 7.5-8"/></svg><span>Vérifié</span></span>
         <label class="ask__question" for="answer" id="q-text"></label>
         <input class="field" id="answer" name="answer" type="text" maxlength="80" placeholder="Ta réponse"
                autocomplete="off" autocapitalize="off" autocorrect="off" spellcheck="false" enterkeyhint="done">
@@ -56,6 +57,11 @@
         </button>
         <p class="status" id="answer-status" role="status" aria-live="polite"></p>
       </form>
+
+      <p class="notice">
+        <svg viewBox="0 0 24 24" aria-hidden="true"><path d="M12 3l7 3v5.5c0 4.2-2.9 7.9-7 9.5-4.1-1.6-7-5.3-7-9.5V6z"/><path d="M9 12l2.2 2.2L15.5 10"/></svg>
+        <span>Chaque prénom est protégé par une question que seule la vraie personne connaît. Elle sert à vérifier que c'est bien toi, et que personne ne se fait passer pour quelqu'un d'autre pour voir son tirage. <strong id="q-notme">Tu n'es pas cette personne ? Reviens en arrière.</strong></span>
+      </p>
     </section>
 
     <!-- Cadeau et révélation -->
@@ -72,7 +78,9 @@
       <h2 class="gift-title" id="gift-title">Ton cadeau t'attend</h2>
       <p class="lead" id="gift-hint">Touche le paquet pour l'ouvrir.</p>
 
-      <div class="stage">
+      <div class="stage" id="stage">
+        <span class="rays" aria-hidden="true"></span>
+        <span class="pulse" aria-hidden="true"></span>
         <button class="gift" id="gift" type="button" aria-label="Ouvrir le cadeau">
           <span class="gift__glow"></span>
           <span class="gift__box"></span>
@@ -80,6 +88,8 @@
         </button>
 
         <div class="reveal" id="reveal" hidden>
+          <span class="reveal__glare" aria-hidden="true"></span>
+          <span class="twinkle" aria-hidden="true"></span><span class="twinkle" aria-hidden="true"></span><span class="twinkle" aria-hidden="true"></span><span class="twinkle" aria-hidden="true"></span>
           <p class="reveal__label">Tu offres un cadeau à</p>
           <div class="reel" id="reel"><div class="reel__track" id="reel-track"></div></div>
           <p class="reveal__secret">Chut, garde le secret jusqu'au 20 décembre.</p>

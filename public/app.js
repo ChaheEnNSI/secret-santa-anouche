@@ -44,13 +44,13 @@ const screens = {
 };
 let current = 'home';
 
-function show(name, { push = true } = {}) {
+function show(name, { push = true, animate = true } = {}) {
   if (name === current && !screens[name].hidden) return;
   const swap = () => {
     Object.entries(screens).forEach(([key, el]) => { el.hidden = key !== name; });
     screens[name].classList.remove('is-entering');
     void screens[name].offsetWidth;
-    if (!reduceMotion) screens[name].classList.add('is-entering');
+    if (!reduceMotion && animate) screens[name].classList.add('is-entering');
     window.scrollTo({ top: 0 });
   };
   swap();
@@ -154,8 +154,9 @@ const STAR = '<svg viewBox="0 0 24 24" aria-hidden="true"><path d="M12 2.5l2.9 6
 function renderTags() {
   const list = $('#tags');
   list.innerHTML = '';
-  for (const person of state.people) {
+  state.people.forEach((person, index) => {
     const li = document.createElement('li');
+    li.style.setProperty('--i', index);
     const btn = document.createElement('button');
     btn.type = 'button';
     btn.className = 'tag';
@@ -171,10 +172,10 @@ function renderTags() {
       btn.append(st);
       btn.setAttribute('aria-label', `${person.name}, a déjà tiré`);
     }
-    btn.addEventListener('click', () => selectName(person.name));
+    btn.addEventListener('click', () => selectName(person.name, btn));
     li.append(btn);
     list.append(li);
-  }
+  });
 }
 
 async function loadState() {
@@ -212,23 +213,43 @@ function setLoading(btn, loading, label) {
   if (label) btn.querySelector('.btn__label').textContent = label;
 }
 
-async function selectName(name) {
+async function selectName(name, tagEl) {
   state.selected = name;
   // Déjà identifié sur ce téléphone : on va directement au cadeau.
   if (store.get('token') && store.get('name') === name) {
     openGiftScreen();
     return;
   }
-  $('#q-name').textContent = name;
+  const qName = $('#q-name');
+  qName.textContent = name;
+  $('#q-notme').textContent = `Tu n'es pas ${name} ? Reviens en arrière.`;
   $('#q-text').textContent = 'Chargement de ta question…';
+  answerForm.classList.remove('is-verified');
   answerInput.value = '';
   answerInput.disabled = true;
   answerBtn.disabled = true;
   setStatus(answerStatus, '');
-  show('question');
+
+  const nameEl = tagEl?.querySelector('.tag__name');
+  if (nameEl && document.startViewTransition && !reduceMotion) {
+    // Le prénom de l'étiquette glisse jusqu'au titre « Salut … ».
+    nameEl.style.viewTransitionName = 'picked-name';
+    const vt = document.startViewTransition(() => {
+      nameEl.style.viewTransitionName = '';
+      qName.style.viewTransitionName = 'picked-name';
+      show('question', { animate: false });
+    });
+    vt.finished.finally(() => { qName.style.viewTransitionName = ''; });
+  } else {
+    tagEl?.classList.add('is-pulled');
+    await wait(reduceMotion ? 0 : 160);
+    tagEl?.classList.remove('is-pulled');
+    show('question');
+  }
   try {
     const data = await api(`question?name=${encodeURIComponent(name)}`);
-    $('#q-text').textContent = data.question;
+    // Espace insécable avant « ? ! : ; » (typographie française).
+    $('#q-text').textContent = data.question.replace(/ ([?!:;])/g, '\u202f$1');
     answerInput.disabled = false;
     answerBtn.disabled = false;
     // Sur ordinateur, on place le curseur directement dans le champ.
@@ -241,6 +262,7 @@ async function selectName(name) {
 
 answerForm.addEventListener('submit', async (e) => {
   e.preventDefault();
+  sound.unlock();
   const answer = answerInput.value.trim();
   answerInput.classList.remove('is-wrong');
   if (!answer) {
@@ -257,7 +279,10 @@ answerForm.addEventListener('submit', async (e) => {
     setLoading(answerBtn, false, 'Vérifier');
     setStatus(answerStatus, 'C\'est bien toi !', 'ok');
     answerInput.blur();
-    await wait(450);
+    answerForm.classList.add('is-verified');
+    sound.seal();
+    navigator.vibrate?.(20);
+    await wait(reduceMotion ? 300 : 1100);
     state.reveal = null;
     openGiftScreen();
   } catch (err) {
@@ -281,6 +306,7 @@ const gift = $('#gift');
 const reveal = $('#reveal');
 const after = $('#after');
 const track = $('#reel-track');
+const stage = $('#stage');
 
 function resetGift() {
   gift.hidden = false;
@@ -291,6 +317,8 @@ function resetGift() {
   track.style.transform = 'none';
   track.innerHTML = '';
   after.hidden = true;
+  stage.classList.remove('is-opened', 'is-landed');
+  reveal.classList.remove('is-tilting');
   $('#gift-title').textContent = 'Ton cadeau t\'attend';
   $('#gift-hint').hidden = false;
   $('#gift-hint').textContent = 'Touche le paquet pour l\'ouvrir.';
@@ -380,10 +408,14 @@ async function playOpening(data) {
   }
 
   gift.classList.add('is-open');
+  stage.classList.add('is-opened');
   sound.pop();
   navigator.vibrate?.(30);
   const rect = gift.getBoundingClientRect();
-  setTimeout(() => confetti.burst(rect.left + rect.width / 2, rect.top + rect.height * 0.35, 150), 180);
+  setTimeout(() => {
+    confetti.burst(rect.left + rect.width / 2, rect.top + rect.height * 0.35, 150);
+    confetti.sparkle(rect.left + rect.width / 2, rect.top + rect.height * 0.4, 40, rect.width * 0.5);
+  }, 180);
 
   await wait(650);
   reveal.hidden = false;
@@ -414,10 +446,12 @@ async function playOpening(data) {
   spin.cancel();
   showOnlyTarget(data.target);
   reveal.classList.add('is-landed');
+  stage.classList.add('is-landed');
   sound.chime();
   navigator.vibrate?.([25, 60, 35]);
   const r = reveal.getBoundingClientRect();
   confetti.burst(r.left + r.width / 2, r.top + r.height * 0.45, 110, 0.75);
+  confetti.sparkle(r.left + r.width / 2, r.top + r.height * 0.5, 34, r.width * 0.45);
   await wait(700);
   finishReveal(data);
 }
@@ -437,8 +471,28 @@ function showResultInstantly(data) {
   gift.hidden = true;
   reveal.hidden = false;
   reveal.classList.add('is-in', 'is-landed');
+  stage.classList.add('is-opened', 'is-landed');
   finishReveal(data);
 }
+
+// Inclinaison de la carte quand on la touche ou la survole.
+function tiltCard(e) {
+  if (reduceMotion || !reveal.classList.contains('is-landed')) return;
+  const r = reveal.getBoundingClientRect();
+  const px = Math.min(1, Math.max(0, (e.clientX - r.left) / r.width));
+  const py = Math.min(1, Math.max(0, (e.clientY - r.top) / r.height));
+  reveal.style.setProperty('--ry', `${((px - 0.5) * 16).toFixed(2)}deg`);
+  reveal.style.setProperty('--rx', `${((0.5 - py) * 12).toFixed(2)}deg`);
+  reveal.style.setProperty('--gx', `${(px * 100).toFixed(1)}%`);
+  reveal.style.setProperty('--gy', `${(py * 100).toFixed(1)}%`);
+  reveal.classList.add('is-tilting');
+}
+function untiltCard() { reveal.classList.remove('is-tilting'); }
+reveal.addEventListener('pointermove', tiltCard);
+reveal.addEventListener('pointerdown', tiltCard);
+reveal.addEventListener('pointerleave', untiltCard);
+reveal.addEventListener('pointercancel', untiltCard);
+reveal.addEventListener('pointerup', (e) => { if (e.pointerType !== 'mouse') untiltCard(); });
 
 function finishReveal(data) {
   $('#gift-title').textContent = 'C\'est tiré !';
@@ -567,9 +621,9 @@ const confetti = (() => {
     ctx.clearRect(0, 0, window.innerWidth, window.innerHeight);
     parts = parts.filter((p) => p.life > 0);
     for (const p of parts) {
-      p.vy += 0.16 * dt;
-      p.vx *= 0.985 ** dt;
-      p.vy *= 0.985 ** dt;
+      p.vy += p.g * dt;
+      p.vx *= p.drag ** dt;
+      p.vy *= p.drag ** dt;
       p.x += p.vx * dt;
       p.y += p.vy * dt;
       p.rot += p.vr * dt;
@@ -579,7 +633,19 @@ const confetti = (() => {
       ctx.translate(p.x, p.y);
       ctx.rotate(p.rot);
       ctx.fillStyle = p.color;
-      if (p.round) { ctx.beginPath(); ctx.arc(0, 0, p.w / 2, 0, Math.PI * 2); ctx.fill(); }
+      if (p.spark) {
+        const r = p.w * (0.55 + 0.45 * Math.sin(p.life * 0.25 + p.phase));
+        ctx.shadowColor = '#f7e4a6';
+        ctx.shadowBlur = 10;
+        ctx.beginPath();
+        for (let k = 0; k < 8; k++) {
+          const a = (k * Math.PI) / 4;
+          const rad = k % 2 ? r * 0.3 : r;
+          ctx.lineTo(Math.cos(a) * rad, Math.sin(a) * rad);
+        }
+        ctx.closePath();
+        ctx.fill();
+      } else if (p.round) { ctx.beginPath(); ctx.arc(0, 0, p.w / 2, 0, Math.PI * 2); ctx.fill(); }
       else { ctx.scale(1, Math.cos(p.rot * 2)); ctx.fillRect(-p.w / 2, -p.h / 2, p.w, p.h); }
       ctx.restore();
     }
@@ -603,11 +669,38 @@ const confetti = (() => {
           round: Math.random() < 0.3,
           color: colors[Math.floor(Math.random() * colors.length)],
           life: 90 + Math.random() * 70,
+          g: 0.16,
+          drag: 0.985,
         });
       }
-      if (!running) { running = true; last = performance.now(); requestAnimationFrame(frame); }
+      start();
+    },
+    // Étincelles dorées qui montent doucement en scintillant.
+    sparkle(x, y, count = 30, spread = 120) {
+      if (reduceMotion) return;
+      for (let i = 0; i < count; i++) {
+        parts.push({
+          x: x + (Math.random() - 0.5) * spread * 2,
+          y: y + (Math.random() - 0.5) * spread * 0.6,
+          vx: (Math.random() - 0.5) * 1.6,
+          vy: -0.6 - Math.random() * 2.2,
+          rot: 0,
+          vr: (Math.random() - 0.5) * 0.04,
+          w: 4 + Math.random() * 6,
+          spark: true,
+          phase: Math.random() * 6,
+          color: Math.random() < 0.6 ? '#f7e4a6' : '#fff6dc',
+          life: 80 + Math.random() * 80,
+          g: -0.012,
+          drag: 0.975,
+        });
+      }
+      start();
     },
   };
+  function start() {
+    if (!running) { running = true; last = performance.now(); requestAnimationFrame(frame); }
+  }
 })();
 
 // ---------- Sons (générés, aucun fichier audio) ----------
@@ -692,7 +785,13 @@ const sound = (() => {
       gap *= 1.16;
     }
   }
-  return { unlock, chime, pop, ticks };
+  function seal() {
+    if (!on || !ctx) return;
+    const t = ctx.currentTime + 0.02;
+    bell(t, 659.3, 1.2, 0.09);
+    bell(t + 0.09, 987.8, 1.5, 0.08);
+  }
+  return { unlock, chime, pop, ticks, seal };
 })();
 
 // ---------- Démarrage ----------
@@ -708,6 +807,11 @@ history.replaceState({ screen: 'home' }, '');
     return;
   }
   lightGarland();
+  if (!reduceMotion) {
+    const tags = $('#tags');
+    tags.classList.add('is-dropping');
+    setTimeout(() => tags.classList.remove("is-dropping"), 150 + state.people.length * 55 + 1000);
+  }
   // Déjà identifié sur ce téléphone : on reprend là où la personne en était.
   const name = store.get('name');
   if (store.get('token') && state.people.some((p) => p.name === name)) {
