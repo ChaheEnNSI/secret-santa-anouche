@@ -1,0 +1,21 @@
+<!doctype html><html lang="fr"><head><meta charset="utf-8"><link rel="stylesheet" href="/styles.css">
+<style>
+ body{width:1200px;height:630px;overflow:hidden;margin:0}
+ .og{position:relative;z-index:2;display:flex;align-items:center;justify-content:center;gap:70px;height:630px;padding-top:40px}
+ .og .gift{--w:300px;animation:none}
+ .og h1{font-size:118px;text-align:left;animation:none;background:none;color:var(--snow)}
+ .og p{margin:18px 0 0;font:italic 40px var(--serif);color:var(--gold)}
+ .garland{height:110px}
+</style></head><body>
+<svg id="garland" class="garland"></svg>
+<div class="og">
+ <button class="gift"><span class="gift__glow"></span><span class="gift__box"></span><span class="gift__lid"><span class="gift__bow"><i></i><i></i><b></b></span></span></button>
+ <div><h1 class="title">Secret<br>Santa</h1><p>Dimanche 20 décembre</p></div>
+</div>
+<script>
+const svg=document.getElementById('garland'),w=1200,h=110,top=6,sag=h*.42;
+svg.setAttribute('viewBox',`0 0 ${w} ${h}`);
+svg.innerHTML=`<defs><filter id="halo" x="-100%" y="-100%" width="300%" height="300%"><feGaussianBlur stdDeviation="7"/></filter></defs><path class="garland__wire" d="M -10 ${top} Q ${w*.25} ${top+sag*2} ${w*.5} ${top+4} Q ${w*.75} ${top+sag*2} ${w+10} ${top}"/>`;
+const path=svg.querySelector('path'),L=path.getTotalLength(),c=['#f2c14e','#e5484d','#fff4dc','#57b98a'];
+for(let i=0;i<14;i++){const p=path.getPointAtLength(L*.04+(L*.92/13)*i);svg.insertAdjacentHTML('beforeend',`<g class="bulb is-lit" style="--c:${c[i%4]}" transform="translate(${p.x} ${p.y}) scale(1.3)"><circle class="bulb__halo" cx="0" cy="14" r="13" filter="url(#halo)" style="animation:none;opacity:.6"/><rect class="bulb__cap" x="-3.5" y="0" width="7" height="6" rx="1.5"/><path class="bulb__glass" d="M0 5 C 6 7, 7 16, 0 23 C -7 16, -6 7, 0 5 Z"/></g>`)}
+</script></body></html>

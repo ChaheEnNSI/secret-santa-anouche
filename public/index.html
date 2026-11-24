@@ -1,0 +1,113 @@
+<!doctype html>
+<html lang="fr">
+<head>
+  <meta charset="utf-8">
+  <meta name="viewport" content="width=device-width, initial-scale=1, viewport-fit=cover">
+  <title>Secret Santa du 20 décembre</title>
+  <meta name="description" content="Choisis ton prénom, réponds à ta question et découvre à qui tu offres un cadeau.">
+  <meta name="theme-color" content="#0D2E23">
+  <meta property="og:title" content="Secret Santa du 20 décembre">
+  <meta property="og:description" content="Choisis ton prénom et découvre à qui tu offres un cadeau.">
+  <meta property="og:type" content="website">
+  <meta property="og:image" content="https://secret-santa-anouche.fr/og.jpg">
+  <meta name="twitter:card" content="summary_large_image">
+  <link rel="icon" href="/favicon.svg" type="image/svg+xml">
+  <link rel="preload" href="/fonts/fraunces-latin-full-normal.woff2" as="font" type="font/woff2" crossorigin>
+  <link rel="preload" href="/fonts/dm-sans-latin-wght-normal.woff2" as="font" type="font/woff2" crossorigin>
+  <link rel="stylesheet" href="/styles.css">
+</head>
+<body>
+  <canvas id="snow" class="layer layer--snow" aria-hidden="true"></canvas>
+  <canvas id="confetti" class="layer layer--confetti" aria-hidden="true"></canvas>
+
+
+  <svg id="garland" class="garland" aria-hidden="true"></svg>
+
+  <main class="app">
+    <!-- Accueil : choix du prénom -->
+    <section class="screen" id="screen-home" data-screen="home">
+      <header class="hero">
+        <h1 class="title">Secret Santa</h1>
+        <p class="date"><span id="date-label">Dimanche 20 décembre</span><span class="date__count" id="countdown"></span></p>
+        <p class="progress" id="progress" aria-live="polite"></p>
+      </header>
+
+      <h2 class="who">Qui es-tu ?</h2>
+      <ul class="tags" id="tags" aria-label="Participants"></ul>
+      <p class="hint">Touche ton prénom pour découvrir à qui tu offres un cadeau.</p>
+    </section>
+
+    <!-- Question personnelle -->
+    <section class="screen" id="screen-question" data-screen="question" hidden>
+      <button class="back" type="button" data-action="home">
+        <svg viewBox="0 0 24 24" aria-hidden="true"><path d="M14.5 5.5L8 12l6.5 6.5"/></svg>
+        Changer de prénom
+      </button>
+      <h2 class="hello">Salut <span id="q-name"></span></h2>
+      <p class="lead">Réponds à ta question pour montrer que c'est bien toi.</p>
+
+      <form class="card ask" id="answer-form" novalidate>
+        <label class="ask__question" for="answer" id="q-text"></label>
+        <input class="field" id="answer" name="answer" type="text" maxlength="80" placeholder="Ta réponse"
+               autocomplete="off" autocapitalize="off" autocorrect="off" spellcheck="false" enterkeyhint="done">
+        <button class="btn" id="answer-btn" type="submit">
+          <svg class="btn__spin" viewBox="0 0 24 24" aria-hidden="true"><path d="M12 2v20M3.3 7l17.4 10M3.3 17L20.7 7M12 2l-2 2m2-2l2 2m-2 18l-2-2m2 2l2-2"/></svg>
+          <span class="btn__label">Vérifier</span>
+        </button>
+        <p class="status" id="answer-status" role="status" aria-live="polite"></p>
+      </form>
+    </section>
+
+    <!-- Cadeau et révélation -->
+    <section class="screen" id="screen-gift" data-screen="gift" hidden>
+      <div class="toprow">
+        <button class="back" type="button" data-action="home">
+          <svg viewBox="0 0 24 24" aria-hidden="true"><path d="M14.5 5.5L8 12l6.5 6.5"/></svg>
+          Accueil
+        </button>
+      <button id="sound" class="sound" type="button" aria-pressed="true" aria-label="Son activé, toucher pour couper">
+        <svg viewBox="0 0 24 24" aria-hidden="true"><path class="sound__speaker" d="M4 9.5h3.2L12 5.6v12.8l-4.8-3.9H4z"/><path class="sound__wave" d="M15.3 9a4.2 4.2 0 0 1 0 6M17.8 6.6a7.6 7.6 0 0 1 0 10.8"/><path class="sound__mute" d="M15.5 9.5l5 5m0-5l-5 5"/></svg>
+      </button>
+      </div>
+      <h2 class="gift-title" id="gift-title">Ton cadeau t'attend</h2>
+      <p class="lead" id="gift-hint">Touche le paquet pour l'ouvrir.</p>
+
+      <div class="stage">
+        <button class="gift" id="gift" type="button" aria-label="Ouvrir le cadeau">
+          <span class="gift__glow"></span>
+          <span class="gift__box"></span>
+          <span class="gift__lid"><span class="gift__bow"><i></i><i></i><b></b></span></span>
+        </button>
+
+        <div class="reveal" id="reveal" hidden>
+          <p class="reveal__label">Tu offres un cadeau à</p>
+          <div class="reel" id="reel"><div class="reel__track" id="reel-track"></div></div>
+          <p class="reveal__secret">Chut, garde le secret jusqu'au 20 décembre.</p>
+        </div>
+      </div>
+
+      <div class="after" id="after" hidden>
+        <article class="card wish">
+          <h3 class="wish__title" id="target-wish-title">Ses idées cadeaux</h3>
+          <p class="wish__text" id="target-wish"></p>
+        </article>
+
+        <form class="card wish" id="wish-form">
+          <h3 class="wish__title"><label for="my-wish">Tes idées cadeaux</label></h3>
+          <p class="wish__help">Seule la personne qui t'a tiré pourra les lire.</p>
+          <textarea class="field field--area" id="my-wish" maxlength="600" rows="3" placeholder="Un livre, une bougie, du chocolat noir…"></textarea>
+          <button class="btn btn--quiet" type="submit">Enregistrer</button>
+          <p class="status" id="wish-status" role="status" aria-live="polite"></p>
+        </form>
+
+        <div class="links">
+          <button class="link" type="button" data-action="replay">Revoir l'ouverture du cadeau</button>
+          <button class="link" type="button" data-action="logout">Pas ton téléphone ? Se déconnecter</button>
+        </div>
+      </div>
+    </section>
+  </main>
+
+  <script type="module" src="/app.js"></script>
+</body>
+</html>

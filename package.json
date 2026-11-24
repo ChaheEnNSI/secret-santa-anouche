@@ -1,0 +1,19 @@
+{
+  "name": "secret-santa-anouche",
+  "version": "1.0.0",
+  "directories": {
+    "test": "test"
+  },
+  "scripts": {
+    "test": "node test/draw.test.mjs && node test/verify.test.mjs",
+    "dev": "wrangler dev",
+    "deploy": "wrangler deploy"
+  },
+  "devDependencies": {
+    "@fontsource-variable/dm-sans": "^5.3.0",
+    "@fontsource-variable/fraunces": "^5.3.0",
+    "wrangler": "^4.168.0"
+  },
+  "type": "module",
+  "private": true
+}
