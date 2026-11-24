@@ -255,12 +255,12 @@ const checkDone = $('#check-done');
 const HOLD_MS = reduceMotion ? 700 : 1900;
 const SCAN_STEPS = ['Lecture de l\'empreinte…', 'Comparaison avec la liste des gentils…', 'Consultation de l\'historique des cadeaux…'];
 const VERDICTS = [
-  (n) => `Empreinte reconnue. ${n}, 98 % gentil, 2 % « je l'ai trouvé sur Vinted ».`,
-  () => 'Identité confirmée. Aucune paire de chaussettes offerte à ce jour, bravo.',
-  () => 'C\'est bien toi. Le Père Noël te fait confiance. Les lutins, moins.',
-  () => 'Analyse terminée : statut « gentil », valable jusqu\'au 20 décembre, sous réserve.',
-  () => 'Empreinte valide. Taux de chocolat détecté : élevé, mais dans les normes.',
-  () => 'Profil vérifié. Cadeaux achetés à la station-service : aucun. Ne gâche pas tout.',
+  (n) => `Empreinte reconnue, c'est bien ${n}. Par contre ton doigt sent bizarre, lave-toi les mains avant d'emballer le cadeau.`,
+  () => 'Identité confirmée. Le scanner a juste demandé qui avait mangé des chips avant de le toucher.',
+  () => 'C\'est bien toi. On t\'a reconnu à l\'odeur.',
+  () => 'Empreinte validée. L\'écran va devoir être désinfecté, mais c\'est validé.',
+  () => 'Accès autorisé. Les lutins ont tous reculé d\'un pas en sentant ton doigt.',
+  () => 'Vérifié. Ton doigt colle un peu, le Père Noël ne juge pas. Enfin, un peu quand même.',
 ];
 
 function setScan(text, kind = '') {
@@ -579,12 +579,6 @@ function handleRevealError(err) {
   $('#gift-hint').textContent = err.message;
 }
 
-// Position finale (sans les transformations en cours) du prénom dans la carte.
-function finalNameRect() {
-  const s = stage.getBoundingClientRect();
-  return { left: s.left + reveal.offsetLeft + revealName.offsetLeft, top: s.top + reveal.offsetTop + revealName.offsetTop, width: revealName.offsetWidth, height: revealName.offsetHeight };
-}
-
 async function openGift() {
   if (state.opening || gift.classList.contains('is-open')) return;
   state.opening = true;
@@ -614,15 +608,18 @@ async function openGift() {
   overlay.burst(ox, oy, 60, 0.7);
   await wait(450);
 
-  // 2. La carte se redresse, les étincelles tourbillonnent puis forment le prénom.
-  revealName.textContent = data.target;
+  // 2. La carte se redresse, puis les lutins apportent les lettres une à une.
+  prepareLetters(data.target);
   reveal.hidden = false;
-  const rect = finalNameRect();
-  const fontSize = parseFloat(getComputedStyle(revealName).fontSize) || 50;
-  setTimeout(() => { gift.classList.add('is-gone'); reveal.classList.add('is-in'); }, 650);
-  sound.rise(2.5);
+  setTimeout(() => { gift.classList.add('is-gone'); reveal.classList.add('is-in'); }, 500);
   $('#gift-title').textContent = 'Et tu as pioché…';
-  await overlay.formText({ text: data.target, font: `italic 600 ${fontSize}px Fraunces`, rect, ox, oy, swirl: 1.1, converge: 1.4 });
+  $('#gift-hint').textContent = 'Les lutins t\'apportent le prénom, lettre par lettre.';
+  await wait(1700);
+  gift.hidden = true;
+  await deliverLetters();
+  $('#gift-hint').textContent = '';
+  revealName.classList.remove('is-spelling');
+  revealName.textContent = data.target;
 
   // 3. Éclat, prénom en or, feu d'artifice.
   flash.classList.remove('is-on');
@@ -631,17 +628,121 @@ async function openGift() {
   sound.boom();
   sound.chime();
   navigator.vibrate?.([25, 60, 35]);
+  // La mise en page se resserre : la carte glisse vers sa place au lieu de sauter.
+  const before = reveal.getBoundingClientRect().top;
   reveal.classList.add('is-named');
   stage.classList.add('is-named');
-  overlay.fadeText();
-  gift.hidden = true;
+  finishReveal(data);
+  const dy = before - reveal.getBoundingClientRect().top;
+  if (Math.abs(dy) > 2) reveal.animate([{ translate: `0 ${dy}px` }, { translate: '0 0' }], { duration: 750, easing: 'cubic-bezier(0.3, 1.25, 0.4, 1)' });
   const r = reveal.getBoundingClientRect();
   overlay.burst(r.left + r.width / 2, r.top + r.height * 0.45, 120, 0.8);
   const W = window.innerWidth;
   [[0.22, 0.2, 'gold', 150], [0.78, 0.16, 'red', 450], [0.5, 0.1, 'white', 800], [0.3, 0.12, 'gold', 1150], [0.7, 0.22, 'gold', 1500]].forEach(([fx, fy, tone, delay]) => {
     setTimeout(() => { overlay.firework(W * fx, window.innerHeight * fy + 60, tone); sound.pop(); }, delay);
   });
-  finishReveal(data);
+}
+
+// ---------- Lutins livreurs de lettres ----------
+const elvesBox = $('#elves');
+function elfMarkup(variant) {
+  const hat = variant ? '#b21f35' : '#1f7a4c';
+  const suit = variant ? '#1f7a4c' : '#b21f35';
+  const shoe = variant ? '#b21f35' : '#1f7a4c';
+  return `<svg class="elf__svg" viewBox="0 0 60 70">
+    <path class="leg leg-l" d="M24.5 57v9h-5" stroke="${shoe}" stroke-width="4" stroke-linecap="round" stroke-linejoin="round" fill="none"/>
+    <path class="leg leg-r" d="M35.5 57v9h5" stroke="${shoe}" stroke-width="4" stroke-linecap="round" stroke-linejoin="round" fill="none"/>
+    <path class="arm arm-l" d="M24 44L15 15" stroke="${suit}" stroke-width="4.5" stroke-linecap="round"/>
+    <path class="arm arm-r" d="M36 44L45 15" stroke="${suit}" stroke-width="4.5" stroke-linecap="round"/>
+    <circle cx="15" cy="14" r="3.2" fill="#f2c7a5"/><circle cx="45" cy="14" r="3.2" fill="#f2c7a5"/>
+    <path d="M19.5 58L23 41h14l3.5 17z" fill="${suit}"/>
+    <path d="M23 41h14l-7 6z" fill="#f7f2e7"/>
+    <rect x="21.2" y="50" width="17.6" height="3.4" rx="1" fill="#e9c46a"/>
+    <path d="M21.5 32l-7-3.5 5.5 7z M38.5 32l7-3.5-5.5 7z" fill="#f2c7a5"/>
+    <circle cx="30" cy="33" r="9" fill="#f6d2b2"/>
+    <circle cx="26.8" cy="32" r="1.3" fill="#2a1a10"/><circle cx="33.2" cy="32" r="1.3" fill="#2a1a10"/>
+    <circle cx="24.6" cy="35.6" r="1.7" fill="rgba(226,110,110,0.55)"/><circle cx="35.4" cy="35.6" r="1.7" fill="rgba(226,110,110,0.55)"/>
+    <path d="M27 36.4q3 2.6 6 0" stroke="#7a3b2b" stroke-width="1.2" fill="none" stroke-linecap="round"/>
+    <path d="M19.5 27Q23 10 34 9.5q11 0 17.5 9-8-3-11 8.5z" fill="${hat}"/>
+    <rect x="19" y="24.5" width="22" height="5" rx="2.5" fill="#f7f2e7"/>
+    <circle class="elf__bell" cx="51.5" cy="19.5" r="3" fill="#e9c46a"/>
+  </svg>`;
+}
+
+// Trajet en petits bonds entre deux points (liste d'images clés pour l'animation).
+function hopFrames(x0, y0, x1, y1, hops, height, lean) {
+  const frames = [];
+  const steps = hops * 10;
+  for (let i = 0; i <= steps; i++) {
+    const k = i / steps;
+    const local = (k * hops) % 1;
+    const y = y0 + (y1 - y0) * k - Math.sin(Math.PI * (i === steps ? 1 : local)) * height;
+    const rot = Math.sin(Math.PI * 2 * local) * lean;
+    frames.push({ transform: `translate(${(x0 + (x1 - x0) * k).toFixed(1)}px, ${y.toFixed(1)}px) rotate(${rot.toFixed(1)}deg)` });
+  }
+  return frames;
+}
+
+// Cases vides (invisibles) posées avant l'entrée de la carte, pour que rien ne bouge ensuite.
+function prepareLetters(word) {
+  revealName.classList.add('is-spelling');
+  revealName.innerHTML = [...word].map((c) => `<span class="ch">${c.replace(/[<>&]/g, '')}</span>`).join('');
+}
+
+async function deliverLetters() {
+  const fontSize = parseFloat(getComputedStyle(revealName).fontSize) || 50;
+  const spans = [...revealName.querySelectorAll('.ch')];
+  const W = window.innerWidth, H = window.innerHeight;
+  const EW = 60, EH = 69;
+  const trips = spans.map((span, i) => new Promise((resolve) => {
+    setTimeout(() => {
+      const r = span.getBoundingClientRect();
+      const cx = r.left + r.width / 2;
+      const cy = r.top + r.height / 2;
+      const fromLeft = cx < W / 2 ? i % 3 !== 2 : i % 3 === 2;
+      const elf = document.createElement('div');
+      elf.className = 'elf is-walking';
+      elf.style.setProperty('--fs', `${fontSize}px`);
+      elf.innerHTML = `<span class="elf__letter">${span.textContent}</span>${elfMarkup(i % 2)}`;
+      elvesBox.append(elf);
+      const letter = elf.querySelector('.elf__letter');
+      const lh = letter.offsetHeight || fontSize;
+      // L'elfe s'arrête sous la case, la lettre tenue au-dessus de la tête, puis la pousse en place.
+      const PUSH = 24;
+      const ax = cx - EW / 2;
+      const ay = cy + PUSH - 15 + lh / 2;
+      const sx = fromLeft ? -EW - 20 : W + 20;
+      const sy = Math.min(H - EH - 24, ay + rand(70, 190));
+      const inAnim = elf.animate(hopFrames(sx, sy, ax, ay, 3, rand(26, 42), fromLeft ? 8 : -8), { duration: 950, easing: 'linear', fill: 'forwards' });
+      inAnim.finished.then(async () => {
+        elf.classList.remove('is-walking');
+        const drop = letter.animate([{ transform: 'translateX(-50%) translateY(0)' }, { transform: `translateX(-50%) translateY(-${PUSH}px)` }], { duration: 230, delay: 60, easing: 'cubic-bezier(0.2, 0.7, 0.3, 1)', fill: 'forwards' });
+        elf.animate([
+          { transform: `translate(${ax}px, ${ay}px) scale(1, 1)` },
+          { transform: `translate(${ax}px, ${ay + 5}px) scale(1.1, 0.86)`, offset: 0.3 },
+          { transform: `translate(${ax}px, ${ay - 12}px) scale(0.94, 1.08)`, offset: 0.65 },
+          { transform: `translate(${ax}px, ${ay}px) scale(1, 1)` },
+        ], { duration: 380, easing: 'ease-out', fill: 'forwards' });
+        await drop.finished.catch(() => {});
+        letter.style.visibility = 'hidden';
+        span.classList.add('is-placed');
+        sound.note(i + 2);
+        navigator.vibrate?.(8);
+        overlay.sparkle(cx, cy, 10, 16);
+        resolve();
+        // Petit geste de joie, puis il repart en bondissant.
+        elf.classList.add('is-cheering');
+        await wait(420);
+        elf.classList.remove('is-cheering');
+        elf.classList.add('is-walking');
+        const ex = fromLeft ? -EW - 30 : W + 30;
+        const out = elf.animate(hopFrames(ax, ay, ex, sy - rand(0, 80), 3, rand(30, 46), fromLeft ? -8 : 8), { duration: 900, easing: 'linear', fill: 'forwards' });
+        out.finished.then(() => elf.remove()).catch(() => elf.remove());
+      }).catch(() => { span.classList.add('is-placed'); resolve(); elf.remove(); });
+    }, i * 340);
+  }));
+  await Promise.all(trips);
+  await wait(350);
 }
 
 function showResultInstantly(data) {
