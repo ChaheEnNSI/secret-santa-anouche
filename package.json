@@ -7,7 +7,8 @@
   "scripts": {
     "test": "node test/draw.test.mjs && node test/verify.test.mjs",
     "dev": "wrangler dev",
-    "deploy": "wrangler deploy"
+    "deploy": "wrangler deploy",
+    "preview": "node tools/build-preview.mjs"
   },
   "devDependencies": {
     "@fontsource-variable/dm-sans": "^5.3.0",
