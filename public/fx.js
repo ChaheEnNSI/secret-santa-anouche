@@ -465,6 +465,40 @@ export const sound = (() => {
       const scale = [523.3, 587.3, 659.3, 784, 880, 1046.5, 1174.7, 1318.5, 1568, 1760];
       bell(ctx.currentTime + 0.01, scale[i % scale.length], 1.4, 0.09);
     },
+    // --- Bruitages des lutins ---
+    sweep(type, f0, f1, dur, vol, delay = 0) { // glissando simple
+      if (!ready()) return;
+      const t = ctx.currentTime + delay;
+      const o = ctx.createOscillator(), g = ctx.createGain();
+      o.type = type;
+      o.frequency.setValueAtTime(f0, t);
+      o.frequency.exponentialRampToValueAtTime(f1, t + dur);
+      g.gain.setValueAtTime(0.0001, t);
+      g.gain.exponentialRampToValueAtTime(vol, t + 0.01);
+      g.gain.exponentialRampToValueAtTime(0.0001, t + dur);
+      o.connect(g).connect(ctx.destination);
+      o.start(t); o.stop(t + dur + 0.02);
+    },
+    squish() { this.sweep('sine', 320, 95, 0.38, 0.12); this.sweep('triangle', 160, 70, 0.3, 0.05, 0.04); },
+    plop() { this.sweep('sine', 950, 180, 0.09, 0.16); },
+    boing() { this.sweep('sine', 180, 720, 0.32, 0.1); this.sweep('sine', 720, 300, 0.25, 0.06, 0.3); },
+    squeak() { this.sweep('sine', 1300, 2100, 0.07, 0.07); this.sweep('sine', 1500, 2400, 0.07, 0.06, 0.09); },
+    yuck() { this.sweep('sawtooth', 210, 120, 0.32, 0.035); this.sweep('square', 140, 95, 0.28, 0.02, 0.05); },
+    sniff() {
+      if (!ready()) return;
+      [0, 0.16].forEach((d) => {
+        const t = ctx.currentTime + d;
+        const src = noise(0.12);
+        const f = ctx.createBiquadFilter();
+        f.type = 'bandpass'; f.frequency.value = 2600; f.Q.value = 1.2;
+        const g = ctx.createGain();
+        g.gain.setValueAtTime(0.0001, t);
+        g.gain.exponentialRampToValueAtTime(0.09, t + 0.04);
+        g.gain.exponentialRampToValueAtTime(0.0001, t + 0.12);
+        src.connect(f).connect(g).connect(ctx.destination);
+        src.start(t);
+      });
+    },
     pop() { // petite détonation de feu d'artifice
       if (!ready()) return;
       const t = ctx.currentTime;

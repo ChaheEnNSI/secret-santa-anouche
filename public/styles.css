@@ -597,23 +597,67 @@ button { cursor: pointer; }
 .title.is-written .title__text { animation: none; stroke-dashoffset: 0; fill-opacity: 1; stroke: rgba(247, 228, 166, 0.35); stroke-width: 0.8; }
 
 /* =========================================================
-   Lutins qui apportent les lettres du prénom
+   Lutins (communs à tout le site)
    ========================================================= */
 .elves { position: fixed; inset: 0; z-index: 31; pointer-events: none; overflow: hidden; }
 .elf { position: absolute; left: 0; top: 0; width: 60px; height: 69px; will-change: transform; }
 .elf__svg { position: relative; z-index: 1; display: block; width: 100%; height: 100%; overflow: visible; filter: drop-shadow(0 6px 6px rgba(0, 0, 0, 0.4)); }
-.elf__svg .leg, .elf__svg .arm { transform-box: fill-box; }
-.elf__svg .leg { transform-origin: 50% 0; }
+.elf__svg .leg { transform-box: fill-box; transform-origin: 50% 0; }
 .elf.is-walking .leg-l { animation: legl 0.2s ease-in-out infinite alternate; }
 .elf.is-walking .leg-r { animation: legr 0.2s ease-in-out infinite alternate; }
+.elf.is-tiptoe .leg-l { animation: legl 0.34s ease-in-out infinite alternate; }
+.elf.is-tiptoe .leg-r { animation: legr 0.34s ease-in-out infinite alternate; }
 @keyframes legl { from { transform: rotate(-18deg); } to { transform: rotate(16deg); } }
 @keyframes legr { from { transform: rotate(16deg); } to { transform: rotate(-18deg); } }
-.elf__svg .arm { transform-origin: 50% 100%; }
-.elf.is-cheering .arm-l { animation: wave 0.25s ease-in-out 3 alternate; }
-.elf.is-cheering .arm-r { animation: wave 0.25s ease-in-out 3 alternate-reverse; }
-@keyframes wave { from { transform: rotate(-14deg); } to { transform: rotate(14deg); } }
+.elf.is-tapping .leg-r { animation: tapfoot 0.18s ease-in-out infinite alternate; }
+@keyframes tapfoot { from { transform: rotate(0deg); } to { transform: rotate(-22deg); } }
+/* Bras : un jeu par pose */
+.elf__svg .arm { transform-box: view-box; }
+.elf__svg .arm-up.arm-l { transform-origin: 24px 44px; }
+.elf__svg .arm-up.arm-r { transform-origin: 36px 44px; }
+.elf__svg .arm-down, .elf__svg .arm-cross, .elf__svg .arm-pinch { display: none; }
+.elf.pose-down .arm-up, .elf.pose-cross .arm-up, .elf.pose-pinch .arm-up { display: none; }
+.elf.pose-down .arm-down { display: inline; }
+.elf.pose-cross .arm-cross { display: inline; }
+.elf.pose-pinch .arm-down.arm-l, .elf.pose-pinch .arm-pinch { display: inline; }
+.elf.pose-wave .arm-up.arm-l { display: none; }
+.elf.pose-wave .arm-down.arm-l { display: inline; }
+.elf.pose-wave .arm-up.arm-r { animation: wave 0.28s ease-in-out infinite alternate; }
+.elf.is-cheering .arm-up.arm-l { animation: wave 0.25s ease-in-out 3 alternate; }
+.elf.is-cheering .arm-up.arm-r { animation: wave 0.25s ease-in-out 3 alternate-reverse; }
+.elf.is-flailing .arm-up.arm-l { animation: wave 0.12s linear infinite alternate; }
+.elf.is-flailing .arm-up.arm-r { animation: wave 0.12s linear infinite alternate-reverse; }
+@keyframes wave { from { transform: rotate(-16deg); } to { transform: rotate(16deg); } }
+/* Visage */
+.elf__svg .eyes { transform-box: fill-box; transform-origin: 50% 50%; animation: blink 4.2s var(--bd, 0s) infinite; }
+@keyframes blink { 0%, 93%, 100% { transform: scaleY(1); } 96% { transform: scaleY(0.12); } }
+.elf__svg .eye { transform-box: fill-box; transform-origin: 50% 50%; }
+.elf.is-shifty .eye { animation: shifty 1.1s steps(1) infinite; }
+@keyframes shifty { 0% { transform: translateX(-1.3px); } 35% { transform: translateX(1.3px); } 70% { transform: translateX(0) translateY(-0.6px); } }
+.elf.look-left .eye { transform: translateX(-1.3px); }
+.elf.look-right .eye { transform: translateX(1.3px); }
+.elf.look-up .eye { transform: translateY(-1.1px); }
+.elf.is-shocked .eye { transform: scale(1.45); }
+.elf__svg .mouth-o, .elf__svg .mouth-yuck { display: none; }
+.elf.is-shocked .mouth-smile, .elf.pose-pinch .mouth-smile { display: none; }
+.elf.is-shocked .mouth-o { display: inline; }
+.elf.pose-pinch .mouth-yuck { display: inline; }
+.elf.pose-pinch .eyes { animation: none; transform: scaleY(0.25); }
+.elf__svg .sniff { opacity: 0; }
+.elf.is-sniffing .sniff { animation: sniffs 0.32s ease-out infinite; }
+@keyframes sniffs { 0% { opacity: 0; transform: translateX(-2px); } 40% { opacity: 1; } 100% { opacity: 0; transform: translateX(2px); } }
+.elf.is-sniffing .nose { transform-box: fill-box; transform-origin: 50% 50%; animation: nosetwitch 0.16s ease-in-out infinite alternate; }
+@keyframes nosetwitch { from { transform: scale(1); } to { transform: scale(1.35, 0.85); } }
 .elf__bell { transform-box: fill-box; transform-origin: 50% 0; animation: jingle 0.4s ease-in-out infinite alternate; }
 @keyframes jingle { from { transform: rotate(-20deg); } to { transform: rotate(20deg); } }
+
+/* Fil de colle entre la lettre et les mains du lutin */
+.goo {
+  position: absolute; left: 0; top: 0; width: 5px; border-radius: 3px;
+  background: linear-gradient(180deg, #fff1c4, var(--gold) 35%, rgba(233, 196, 106, 0.55));
+  box-shadow: 0 0 8px rgba(233, 196, 106, 0.6);
+  transform-origin: 50% 0;
+}
 .elf__letter {
   position: absolute; left: 50%; bottom: calc(100% - 15px); z-index: 2;
   transform: translateX(-50%);
@@ -629,5 +673,38 @@ button { cursor: pointer; }
   color: var(--gold); -webkit-text-fill-color: var(--gold);
   text-shadow: 0 0 16px rgba(233, 196, 106, 0.55);
 }
-.reveal__name .ch.is-placed { opacity: 1; animation: chpop 0.5s cubic-bezier(0.3, 1.5, 0.5, 1); }
-@keyframes chpop { 0% { transform: scale(1.35); filter: brightness(1.9); } 100% { transform: none; filter: none; } }
+.reveal__name .ch.is-placed { opacity: 1; transform-origin: 50% 85%; animation: chpop 0.62s ease-out; }
+@keyframes chpop {
+  0% { transform: scale(1.5, 0.5) translateY(6px); filter: brightness(1.9); }
+  28% { transform: scale(0.82, 1.28); }
+  52% { transform: scale(1.12, 0.9); }
+  74% { transform: scale(0.96, 1.05); }
+  100% { transform: none; filter: none; }
+}
+
+/* Lutin renifleur à côté du scanner */
+.scanwrap { position: relative; width: 172px; margin: 6px auto 0; }
+.scanwrap .scanner { margin: 0; }
+.check .sniffer {
+  left: auto; right: -52px; top: auto; bottom: 0; z-index: 2; pointer-events: none;
+  transform-origin: 50% 100%;
+  transition: transform 0.35s cubic-bezier(0.3, 1.4, 0.5, 1);
+}
+.check .sniffer.is-leaning { transform: translateX(-14px) rotate(-17deg); }
+.check .sniffer.is-leaning .elf__svg { animation: sniffbob 0.32s ease-in-out infinite alternate; }
+@keyframes sniffbob { from { transform: translateY(0); } to { transform: translateY(2px) rotate(-2deg); } }
+.check .sniffer.is-recoiling { transform: translateX(12px) rotate(9deg); }
+.check .sniffer.is-recoiling .elf__svg { animation: recoil 0.7s ease-out; }
+@keyframes recoil { 0% { transform: translateX(-6px) scale(1.08, 0.9); } 30% { transform: translateX(8px) rotate(14deg); } 55% { transform: rotate(-6deg); } 80% { transform: rotate(3deg); } 100% { transform: none; } }
+.stink { position: absolute; left: 50%; top: 4px; width: 92px; height: 76px; margin-left: -46px; z-index: 2; pointer-events: none; animation: stink 1.9s ease-out forwards; }
+.stink svg { width: 100%; height: 100%; overflow: visible; fill: none; stroke: #b7d98c; stroke-width: 2.4; stroke-linecap: round; filter: drop-shadow(0 0 4px rgba(183, 217, 140, 0.6)); }
+.stink path:nth-child(2) { animation: wiggle 0.5s ease-in-out infinite alternate; }
+.stink path:nth-child(odd) { animation: wiggle 0.6s ease-in-out infinite alternate-reverse; }
+@keyframes stink { 0% { opacity: 0; transform: translateY(18px) scale(0.8); } 25% { opacity: 0.85; } 100% { opacity: 0; transform: translateY(-46px) scale(1.15); } }
+@keyframes wiggle { from { transform: translateX(-2px); } to { transform: translateX(2px); } }
+
+/* Lutin têtu sur le couvercle du cadeau */
+.gift .sitter { left: calc(50% - 30px); top: 34px; z-index: 4; pointer-events: none; transform-origin: 50% 100%; }
+
+/* Lutin espion au bord de l'écran */
+.elves .peeker { pointer-events: auto; cursor: pointer; transform-origin: 50% 100%; touch-action: manipulation; }

@@ -166,7 +166,9 @@ async function handleApi(request, env, url) {
 
   // Aucune information sur qui a déjà pioché : seulement la liste des prénoms.
   if (route === 'GET /api/state') {
-    return json({ event: EVENT, people: people(env).map((p) => ({ name: p.name })) });
+    // « round » change quand les tirages sont effacés : les téléphones oublient alors leur ancienne session.
+    const round = await getOrCreateMeta(env, 'round', () => crypto.randomUUID().slice(0, 8));
+    return json({ event: EVENT, round, people: people(env).map((p) => ({ name: p.name })) });
   }
 
   // Entrée après le « contrôle d'identité » (pour rire).
