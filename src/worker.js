@@ -36,9 +36,17 @@ function json(data, status = 200) {
 // En local uniquement : fausse IA qui répond toujours NON, pour tester le blocage.
 const FAKE_AI = { run: async () => ({ response: 'NON' }) };
 
+// Les questions et réponses ne sont pas dans le code (le dépôt est public) :
+// elles sont dans le secret Cloudflare PEOPLE_JSON, invisible depuis l'extérieur.
+// Sans ce secret, on utilise la liste du fichier participants.js (questions « pas encore prêtes »).
+let parsedPeople = null;
 function people(env) {
-  // En local uniquement, TEST_PEOPLE permet de tester sans toucher la vraie liste.
-  return env.TEST_PEOPLE ? JSON.parse(env.TEST_PEOPLE) : CONFIG_PEOPLE;
+  if (env.TEST_PEOPLE) return JSON.parse(env.TEST_PEOPLE); // tests en local uniquement
+  if (env.PEOPLE_JSON) {
+    if (!parsedPeople) parsedPeople = JSON.parse(env.PEOPLE_JSON);
+    return parsedPeople;
+  }
+  return CONFIG_PEOPLE;
 }
 
 function findPerson(env, name) {

@@ -1,6 +1,6 @@
-// Liste des participants, questions et réponses attendues.
-// Ce fichier reste sur le serveur : le navigateur ne reçoit que le prénom
-// et le texte de la question, jamais les réponses.
+// Liste des participants (sans les réponses).
+// Le dépôt est public : les vraies questions et réponses sont stockées dans le
+// secret Cloudflare PEOPLE_JSON (même format que PEOPLE ci-dessous), jamais ici.
 //
 // answers : la réponse attendue, plus d'éventuelles variantes acceptées.
 // ready   : false tant que la vraie question n'est pas renseignée.
