@@ -1,5 +1,5 @@
 // Mode aperçu : le serveur est simulé dans le navigateur.
-// Tirage fictif, réponse de test « noël » pour tout le monde, rien n'est envoyé nulle part.
+// Tirage fictif propre à chaque téléphone, rien n'est envoyé nulle part.
 (() => {
   const NAMES = ['Nouné', 'Anouche', 'Chahé', 'Lucas', 'Taline', 'Vanig', 'Gabjak', 'Antoine', 'Mika', 'Djiv'];
   const store = {
@@ -27,19 +27,14 @@
     const body = init.body ? JSON.parse(init.body) : {};
     const token = String(init.headers?.authorization || '').replace('Bearer ', '');
     const me = NAMES.includes(token) ? token : null;
-    await new Promise((r) => setTimeout(r, route === 'verify' ? 700 : 120));
+    await new Promise((r) => setTimeout(r, 120));
 
     if (route === 'state') {
       return json({ event: { date: '2026-12-20', label: 'Dimanche 20 décembre' }, people: NAMES.map((n) => ({ name: n, revealed: !!db.revealed[n] })) });
     }
-    if (route === 'question') {
-      const n = url.searchParams.get('name');
-      if (!NAMES.includes(n)) return json({ error: 'Ce prénom ne fait pas partie de la liste.' }, 404);
-      return json({ name: n, question: 'Aperçu : ta vraie question arrive bientôt. Pour tester, réponds « noël ».' });
-    }
-    if (route === 'verify') {
-      if (norm(body.answer) === 'noel') return json({ ok: true, token: body.name });
-      return json({ error: 'Ce n\'est pas la bonne réponse. Pour l\'aperçu, tape « noël ».', left: 4 }, 401);
+    if (route === 'enter') {
+      if (!NAMES.includes(body.name)) return json({ error: 'Ce prénom ne fait pas partie de la liste.' }, 404);
+      return json({ ok: true, token: body.name, revealed: !!db.revealed[body.name] });
     }
     if (route === 'reveal') {
       if (!me) return json({ error: 'Session expirée. Choisis ton prénom à nouveau.' }, 401);
@@ -62,7 +57,7 @@
   document.addEventListener('DOMContentLoaded', () => {
     const bar = document.createElement('div');
     bar.className = 'demo-bar';
-    bar.innerHTML = '<span>Aperçu : tirage fictif, réponse « noël »</span><button type="button">Tout effacer</button>';
+    bar.innerHTML = '<span>Aperçu : tirage fictif</span><button type="button">Tout effacer</button>';
     bar.querySelector('button').addEventListener('click', () => {
       try {
         Object.keys(localStorage).filter((k) => k.startsWith('demo:') || k.startsWith('santa:')).forEach((k) => localStorage.removeItem(k));

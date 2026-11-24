@@ -195,23 +195,120 @@ async function goHome({ push = true } = {}) {
   } catch { /* on garde l'affichage précédent */ }
 }
 
-// ---------- Question ----------
-const answerForm = $('#answer-form');
-const answerInput = $('#answer');
-const answerBtn = $('#answer-btn');
-const answerStatus = $('#answer-status');
-let unlockTimer;
+// ---------- Contrôle d'identité (scanner d'empreinte, pour rire) ----------
+const check = $('#check');
+const scanner = $('#scanner');
+const scanStatus = $('#scan-status');
+const checkDone = $('#check-done');
+const HOLD_MS = reduceMotion ? 700 : 1900;
+
+const SCAN_STEPS = [
+  'Lecture de l\'empreinte…',
+  'Comparaison avec la liste des gentils…',
+  'Consultation de l\'historique des cadeaux…',
+];
+const VERDICTS = [
+  (n) => `Empreinte reconnue. ${n}, 98 % gentil, 2 % « je l'ai trouvé sur Vinted ».`,
+  () => 'Identité confirmée. Aucune paire de chaussettes offerte à ce jour, bravo.',
+  () => 'C\'est bien toi. Le Père Noël te fait confiance. Les lutins, moins.',
+  () => 'Analyse terminée : statut « gentil », valable jusqu\'au 20 décembre, sous réserve.',
+  () => 'Empreinte valide. Taux de chocolat détecté : élevé, mais dans les normes.',
+  () => 'Profil vérifié. Cadeaux achetés à la station-service : aucun. Ne gâche pas tout.',
+];
 
 function setStatus(el, text, kind = '') {
   el.textContent = text;
-  el.className = `status${kind ? ` is-${kind}` : ''}`;
+  el.className = `${el.classList.contains('scan-status') ? 'scan-status' : 'status'}${kind ? ` is-${kind}` : ''}`;
 }
 
-function setLoading(btn, loading, label) {
-  btn.classList.toggle('is-loading', loading);
-  btn.disabled = loading;
-  if (label) btn.querySelector('.btn__label').textContent = label;
+let hold = { active: false, start: 0, raf: 0, done: false, busy: false };
+
+function resetCheck(name) {
+  hold = { active: false, start: 0, raf: 0, done: false, busy: false };
+  check.classList.remove('is-verified', 'is-reset');
+  check.style.setProperty('--p', 0);
+  scanner.classList.remove('is-scanning', 'is-done');
+  scanner.disabled = false;
+  checkDone.hidden = true;
+  setStatus(scanStatus, 'Pose ton pouce ici et laisse-le appuyé');
+  const person = state.people.find((p) => p.name === name);
+  const warn = $('#check-warn');
+  if (person?.revealed) {
+    warn.textContent = `${name} a déjà ouvert son cadeau. Si c'est toi, scanne ton pouce pour le revoir. Sinon, repose ce téléphone : les lutins prennent des notes.`;
+    warn.hidden = false;
+  } else {
+    warn.hidden = true;
+  }
+  $('#fineprint').textContent = `En continuant, tu certifies sur l'honneur être ${name}. Toute usurpation sera punie d'un cadeau acheté au tabac du coin.`;
 }
+
+function scanTick() {
+  const p = Math.min(1, (performance.now() - hold.start) / HOLD_MS);
+  check.style.setProperty('--p', p.toFixed(3));
+  const step = SCAN_STEPS[Math.min(SCAN_STEPS.length - 1, Math.floor(p * SCAN_STEPS.length))];
+  if (scanStatus.textContent !== step) setStatus(scanStatus, step);
+  if (p >= 1) { finishScan(); return; }
+  if (hold.active) hold.raf = requestAnimationFrame(scanTick);
+}
+
+function startHold(e) {
+  if (hold.done || hold.busy || hold.active) return;
+  e?.preventDefault?.();
+  hold.active = true;
+  hold.start = performance.now();
+  check.classList.remove('is-reset');
+  scanner.classList.add('is-scanning');
+  sound.unlock();
+  navigator.vibrate?.(12);
+  scanTick();
+}
+
+function stopHold() {
+  if (!hold.active || hold.done) return;
+  hold.active = false;
+  cancelAnimationFrame(hold.raf);
+  scanner.classList.remove('is-scanning');
+  check.classList.add('is-reset');
+  check.style.setProperty('--p', 0);
+  setStatus(scanStatus, 'Trop rapide. Les lutins sont lents, laisse ton pouce appuyé.', 'error');
+}
+
+async function finishScan() {
+  hold.active = false;
+  hold.done = true;
+  hold.busy = true;
+  scanner.classList.remove('is-scanning');
+  try {
+    const data = await api('enter', { method: 'POST', body: { name: state.selected } });
+    store.set('token', data.token);
+    store.set('name', state.selected);
+    state.reveal = null;
+    scanner.classList.add('is-done');
+    scanner.disabled = true;
+    check.classList.add('is-verified');
+    const verdict = VERDICTS[Math.floor(Math.random() * VERDICTS.length)](state.selected);
+    setStatus(scanStatus, verdict, 'result');
+    sound.seal();
+    navigator.vibrate?.([20, 50, 30]);
+    checkDone.hidden = false;
+  } catch (err) {
+    hold.done = false;
+    check.classList.add('is-reset');
+    check.style.setProperty('--p', 0);
+    setStatus(scanStatus, err.message, 'error');
+  } finally {
+    hold.busy = false;
+  }
+}
+
+scanner.addEventListener('pointerdown', (e) => { scanner.setPointerCapture?.(e.pointerId); startHold(e); });
+scanner.addEventListener('pointerup', stopHold);
+scanner.addEventListener('pointercancel', stopHold);
+scanner.addEventListener('lostpointercapture', stopHold);
+scanner.addEventListener('contextmenu', (e) => e.preventDefault());
+scanner.addEventListener('keydown', (e) => { if ((e.key === ' ' || e.key === 'Enter') && !e.repeat) startHold(e); });
+scanner.addEventListener('keyup', (e) => { if (e.key === ' ' || e.key === 'Enter') stopHold(); });
+$('#enter-btn').addEventListener('click', () => openGiftScreen());
 
 async function selectName(name, tagEl) {
   state.selected = name;
@@ -222,13 +319,7 @@ async function selectName(name, tagEl) {
   }
   const qName = $('#q-name');
   qName.textContent = name;
-  $('#q-notme').textContent = `Tu n'es pas ${name} ? Reviens en arrière.`;
-  $('#q-text').textContent = 'Chargement de ta question…';
-  answerForm.classList.remove('is-verified');
-  answerInput.value = '';
-  answerInput.disabled = true;
-  answerBtn.disabled = true;
-  setStatus(answerStatus, '');
+  resetCheck(name);
 
   const nameEl = tagEl?.querySelector('.tag__name');
   if (nameEl && document.startViewTransition && !reduceMotion) {
@@ -246,60 +337,7 @@ async function selectName(name, tagEl) {
     tagEl?.classList.remove('is-pulled');
     show('question');
   }
-  try {
-    const data = await api(`question?name=${encodeURIComponent(name)}`);
-    // Espace insécable avant « ? ! : ; » (typographie française).
-    $('#q-text').textContent = data.question.replace(/ ([?!:;])/g, '\u202f$1');
-    answerInput.disabled = false;
-    answerBtn.disabled = false;
-    // Sur ordinateur, on place le curseur directement dans le champ.
-    if (window.matchMedia('(pointer: fine)').matches) answerInput.focus();
-  } catch (err) {
-    $('#q-text').textContent = 'Question indisponible';
-    setStatus(answerStatus, err.message, 'error');
-  }
 }
-
-answerForm.addEventListener('submit', async (e) => {
-  e.preventDefault();
-  sound.unlock();
-  const answer = answerInput.value.trim();
-  answerInput.classList.remove('is-wrong');
-  if (!answer) {
-    setStatus(answerStatus, 'Écris ta réponse avant de valider.', 'error');
-    answerInput.focus();
-    return;
-  }
-  setLoading(answerBtn, true, 'Vérification…');
-  setStatus(answerStatus, '');
-  try {
-    const data = await api('verify', { method: 'POST', body: { name: state.selected, answer } });
-    store.set('token', data.token);
-    store.set('name', state.selected);
-    setLoading(answerBtn, false, 'Vérifier');
-    setStatus(answerStatus, 'C\'est bien toi !', 'ok');
-    answerInput.blur();
-    answerForm.classList.add('is-verified');
-    sound.seal();
-    navigator.vibrate?.(20);
-    await wait(reduceMotion ? 300 : 1100);
-    state.reveal = null;
-    openGiftScreen();
-  } catch (err) {
-    setLoading(answerBtn, false, 'Vérifier');
-    setStatus(answerStatus, err.message, 'error');
-    if (err.status === 401) {
-      void answerInput.offsetWidth;
-      answerInput.classList.add('is-wrong');
-      answerInput.select();
-    }
-    if (err.status === 429 && err.data?.lockedFor) {
-      answerBtn.disabled = true;
-      clearTimeout(unlockTimer);
-      unlockTimer = setTimeout(() => { answerBtn.disabled = false; setStatus(answerStatus, ''); }, err.data.lockedFor);
-    }
-  }
-});
 
 // ---------- Cadeau ----------
 const gift = $('#gift');

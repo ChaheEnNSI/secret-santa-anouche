@@ -1,10 +1,6 @@
 import { EVENT, EXCLUSIONS, PEOPLE as CONFIG_PEOPLE } from './participants.js';
 import { makeDraw, assertValid } from './draw.js';
-import { checkAnswer } from './verify.js';
 
-const MAX_FAILS = 5; // essais ratés avant blocage
-const LOCK_MS = 10 * 60 * 1000; // durée du blocage : 10 minutes
-const MAX_ANSWER = 80;
 const MAX_WISHLIST = 600;
 
 export default {
@@ -33,20 +29,8 @@ function json(data, status = 200) {
   });
 }
 
-// En local uniquement : fausse IA qui répond toujours NON, pour tester le blocage.
-const FAKE_AI = { run: async () => ({ response: 'NON' }) };
-
-// Les questions et réponses ne sont pas dans le code (le dépôt est public) :
-// elles sont dans le secret Cloudflare PEOPLE_JSON, invisible depuis l'extérieur.
-// Sans ce secret, on utilise la liste du fichier participants.js (questions « pas encore prêtes »).
-let parsedPeople = null;
 function people(env) {
-  if (env.TEST_PEOPLE) return JSON.parse(env.TEST_PEOPLE); // tests en local uniquement
-  if (env.PEOPLE_JSON) {
-    if (!parsedPeople) parsedPeople = JSON.parse(env.PEOPLE_JSON);
-    return parsedPeople;
-  }
-  return CONFIG_PEOPLE;
+  return env.TEST_PEOPLE ? JSON.parse(env.TEST_PEOPLE) : CONFIG_PEOPLE; // TEST_PEOPLE : tests en local
 }
 
 function findPerson(env, name) {
@@ -165,47 +149,13 @@ async function handleApi(request, env, url) {
     });
   }
 
-  if (route === 'GET /api/question') {
-    const person = findPerson(env, url.searchParams.get('name'));
-    if (!person) return json({ error: 'Ce prénom ne fait pas partie de la liste.' }, 404);
-    if (!person.ready) return json({ error: `La question de ${person.name} n'est pas encore prête. Reviens un peu plus tard.` }, 409);
-    return json({ name: person.name, question: person.question });
-  }
-
-  if (route === 'POST /api/verify') {
+  // Entrée après le « contrôle d'identité » (pour rire) : on fait confiance au prénom choisi.
+  if (route === 'POST /api/enter') {
     const body = await readBody(request);
     const person = findPerson(env, body.name);
     if (!person) return json({ error: 'Ce prénom ne fait pas partie de la liste.' }, 404);
-    if (!person.ready) return json({ error: `La question de ${person.name} n'est pas encore prête.` }, 409);
-
-    const answer = String(body.answer ?? '').trim();
-    if (!answer) return json({ error: 'Écris ta réponse avant de valider.' }, 400);
-    if (answer.length > MAX_ANSWER) return json({ error: `Ta réponse est trop longue (${MAX_ANSWER} caractères maximum).` }, 400);
-
-    const row = await env.DB.prepare('SELECT fails, locked_until FROM people WHERE name = ?').bind(person.name).first();
-    const now = Date.now();
-    if (row.locked_until > now) {
-      const minutes = Math.ceil((row.locked_until - now) / 60000);
-      return json({ error: `Trop d'essais. Réessaie dans ${minutes} minute${minutes > 1 ? 's' : ''}.`, lockedFor: row.locked_until - now }, 429);
-    }
-
-    const result = await checkAnswer(env.AI || (env.FAKE_AI ? FAKE_AI : undefined), person, answer);
-    if (result.ok === null) {
-      return json({ error: 'La vérification ne répond pas pour le moment. Réessaie dans quelques secondes.' }, 503);
-    }
-    if (!result.ok) {
-      const fails = row.fails + 1;
-      if (fails >= MAX_FAILS) {
-        await env.DB.prepare('UPDATE people SET fails = 0, locked_until = ? WHERE name = ?').bind(now + LOCK_MS, person.name).run();
-        return json({ error: 'Trop d\'essais. Réessaie dans 10 minutes.', lockedFor: LOCK_MS }, 429);
-      }
-      await env.DB.prepare('UPDATE people SET fails = ? WHERE name = ?').bind(fails, person.name).run();
-      const left = MAX_FAILS - fails;
-      return json({ error: `Ce n'est pas la bonne réponse. Encore ${left} essai${left > 1 ? 's' : ''}.`, left }, 401);
-    }
-
-    await env.DB.prepare('UPDATE people SET fails = 0, locked_until = 0 WHERE name = ?').bind(person.name).run();
-    return json({ ok: true, token: await makeToken(env, person.name), by: result.by });
+    const row = await env.DB.prepare('SELECT revealed_at FROM people WHERE name = ?').bind(person.name).first();
+    return json({ ok: true, token: await makeToken(env, person.name), revealed: !!row?.revealed_at });
   }
 
   if (route === 'POST /api/reveal') {
