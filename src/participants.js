@@ -8,5 +8,5 @@ export const EVENT = {
 // Paires qui ne doivent pas se tirer entre elles (ex. ['Nouné', 'Anouche']). Vide = aucune.
 export const EXCLUSIONS = [];
 
-export const PEOPLE = ['Nouné', 'Anouche', 'Chahé', 'Luca', 'Taline', 'Vanig', 'Gabjak', 'Antoine', 'Mika', 'Djiv']
+export const PEOPLE = ['Nouné', 'Anouche', 'Anouch', 'Chahé', 'Luca', 'Taline', 'Vanig', 'Gabjak', 'Antoine', 'Mika', 'Djiv']
   .map((name) => ({ name }));

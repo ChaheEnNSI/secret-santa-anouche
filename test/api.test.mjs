@@ -15,7 +15,7 @@ const reveal = (token, device) => call('reveal', { method: 'POST', token, device
 
 const st = await call('state');
 const names = st.data.people.map((p) => p.name);
-t('10 participants', names.length === 10);
+t('11 participants', names.length === 11);
 t('seulement le prénom et « a pioché » (jamais qui a pioché qui)', st.data.people.every((p) => Object.keys(p).sort().join() === 'drawn,name' && typeof p.drawn === 'boolean'));
 t('prénom inconnu refusé', (await enter('Bob', dev())).status === 404);
 t('sans identifiant de téléphone refusé', (await enter(names[0])).status === 400);

@@ -27,6 +27,7 @@ export const PALETTES = [
   ['#3d0f52', '#6c1c8c', '#330c45'], // prune
   ['#cfcabd', '#f1ede4', '#c5bfb1'], // argent
   ['#2a5d7a', '#5ca6cd', '#234f69'], // glacier
+  ['#6b5420', '#b08a3a', '#5c481b'], // bronze
 ];
 export function paintBauble(size = 2048, pal = PALETTES[0], label = '', labelScale = 1) {
   const W = size, H = size / 2;
