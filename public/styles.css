@@ -103,6 +103,7 @@ button { cursor: pointer; }
 .layer { position: fixed; inset: 0; width: 100%; height: 100%; pointer-events: none; }
 .layer--snow { z-index: 1; }
 .layer--confetti { z-index: 30; }
+.layer--drifts { z-index: 7; }
 .flash {
   position: fixed; inset: 0; z-index: 40; pointer-events: none; opacity: 0;
   background: radial-gradient(circle at 50% 42%, rgba(255, 246, 214, 0.95), rgba(255, 246, 214, 0.4) 30%, rgba(255, 246, 214, 0) 65%);
@@ -995,3 +996,24 @@ button { cursor: pointer; }
 .elf.is-cranking.is-slow .elf__svg { animation-duration: 0.375s; }
 @keyframes crankhands { 0%, 100% { transform: translate(6px, -3px); } 25% { transform: translate(3px, 6px); } 50% { transform: translate(-6px, 3px); } 75% { transform: translate(-3px, -6px); } }
 @keyframes crankbob { from { transform: translateY(0) rotate(-2deg); } to { transform: translateY(2px) rotate(3deg); } }
+
+/* =========================================================
+   Le sapin 3D de l'accueil
+   ========================================================= */
+.tree-wrap { display: none; position: relative; margin: 2px -20px 0; }
+.picker.has-tree .tree-wrap { display: block; }
+.tree {
+  display: block; width: 100%; height: clamp(380px, 56vh, 500px); touch-action: pan-y; cursor: grab;
+  -webkit-mask-image: linear-gradient(180deg, transparent 0, #000 34px, #000 calc(100% - 26px), transparent 100%);
+  mask-image: linear-gradient(180deg, transparent 0, #000 34px, #000 calc(100% - 26px), transparent 100%);
+}
+.picker.has-tree .tags { display: none; }
+.picker.has-tree.show-list .tags { display: grid; }
+.picker.has-tree .who { margin-bottom: 0; }
+.list-toggle { display: none; margin: 4px auto 0; }
+.picker.has-tree .list-toggle { display: inline-block; }
+.linkish { background: none; border: 0; padding: 6px 10px; font: inherit; font-size: 14px; color: rgba(247, 242, 231, 0.75); text-decoration: underline; text-underline-offset: 3px; cursor: pointer; }
+
+/* Le doigt qui balaie la neige ne doit pas sélectionner le texte */
+body { -webkit-user-select: none; user-select: none; -webkit-touch-callout: none; }
+input, textarea { -webkit-user-select: text; user-select: text; }

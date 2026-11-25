@@ -18,6 +18,8 @@ STEP_JS = """(dt) => {
   }
   const b = window.__santa?.ball;
   if (b) { b.holdRender = true; if (!document.querySelector('#gl').hidden) b.advance(0); }
+  const tr = window.__santa?.tree;
+  if (tr) { tr.holdRender = true; tr.advance(0); }
 }"""
 t_start = time.time()
 with sync_playwright() as p:
@@ -45,7 +47,9 @@ with sync_playwright() as p:
         for _ in range(round(seconds * 30)): frame()
     try:
         run(3.4)
-        pg.tap('.tag[data-name="Anouche"]'); run(1.8)
+        pg.wait_for_function('!!window.__santa.tree', timeout=60000)
+        run(1.5)
+        pg.evaluate('window.__santa.tree.pickByName("Anouche")'); run(2.6)
         box = pg.locator('#scanner').bounding_box()
         sx, sy = box['x'] + box['width'] / 2, box['y'] + box['height'] / 2
         pg.mouse.move(sx, sy); pg.mouse.down(); run(0.3); pg.mouse.up(); run(1.5)

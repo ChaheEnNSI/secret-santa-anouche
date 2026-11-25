@@ -41,8 +41,246 @@ function fitCanvas(canvas, ctx) {
   ctx.setTransform(dpr, 0, 0, dpr, 0, 0);
 }
 
+// ---------- Neige qui tient : elle s'accumule sur le haut des cartes, des boutons et sur chaque lettre du titre ----------
+// Les éléments concernés portent l'attribut data-drift (data-drift="title" pour le titre en SVG).
+// Un coup de doigt dessus la chasse en poudre.
+function createDrifts(canvas) {
+  const ctx = canvas.getContext('2d');
+  const STEP = 2;
+  const states = new WeakMap();
+  const puffs = [];
+  let els = [];
+  let scanAt = 0;
+  let W = 0, H = 0;
+  const resize = () => { fitCanvas(canvas, ctx); W = window.innerWidth; H = window.innerHeight; };
+  resize();
+  window.addEventListener('resize', resize);
+
+  // Profil du dessus de chaque lettre du titre : les lettres sont redessinées une à une en coulisses,
+  // à leur place exacte dans le titre, et on relève le pixel le plus haut de chaque colonne.
+  function titleProfile(svg, r) {
+    const text = svg.querySelector('text');
+    if (!text) return null;
+    const family = getComputedStyle(text).fontFamily;
+    const k = r.width / 620;
+    const size = 122 * k;
+    if (document.fonts?.check && !document.fonts.check(`600 ${Math.round(size)}px ${family}`)) return null;
+    const cw = Math.ceil(size * 1.3), chh = Math.ceil(size * 1.3), ox = Math.round(size * 0.12), base = Math.round(size * 1.08);
+    const c = document.createElement('canvas');
+    c.width = cw; c.height = chh;
+    const x = c.getContext('2d', { willReadFrequently: true });
+    x.font = `600 ${size}px ${family}`;
+    const n = Math.ceil(r.width / STEP);
+    const surf = new Float32Array(n).fill(NaN);
+    const str = text.textContent;
+    for (let i = 0; i < str.length; i++) {
+      if (str[i] === ' ') continue;
+      let ext;
+      try { ext = text.getExtentOfChar(i); } catch { return null; }
+      x.clearRect(0, 0, cw, chh);
+      x.fillText(str[i], ox, base);
+      const img = x.getImageData(0, 0, cw, chh).data;
+      for (let px = 0; px < cw; px++) {
+        let top = -1;
+        for (let py = 0; py < chh; py++) if (img[(py * cw + px) * 4 + 3] > 150) { top = py; break; }
+        if (top < 0) continue;
+        const col = Math.floor((ext.x * k + px - ox) / STEP);
+        if (col < 0 || col >= n) continue;
+        const y = 112 * k - (base - top);
+        if (Number.isNaN(surf[col]) || y < surf[col]) surf[col] = y;
+      }
+    }
+    return surf;
+  }
+  function build(el, r, title) {
+    const n = Math.max(2, Math.ceil(r.width / STEP));
+    let surf;
+    if (title) {
+      surf = titleProfile(el, r);
+      if (!surf) return null;
+    } else {
+      surf = new Float32Array(n);
+      const rad = Math.min(parseFloat(getComputedStyle(el).borderTopLeftRadius) || 0, r.height / 2, r.width / 2);
+      for (let c = 0; c < n; c++) {
+        const d = Math.min(c * STEP + STEP / 2, r.width - c * STEP - STEP / 2);
+        surf[c] = d < rad ? rad - Math.sqrt(Math.max(0, rad * rad - (rad - d) ** 2)) : 0;
+      }
+    }
+    const MAX = title ? 7 : 13;
+    const h = new Float32Array(n), maxH = new Float32Array(n);
+    // hauteur maximale : la neige s'arrondit vers les bords de chaque surface
+    let start = -1;
+    for (let c = 0; c <= n; c++) {
+      const ok = c < n && !Number.isNaN(surf[c]);
+      if (ok && start < 0) start = c;
+      if (!ok && start >= 0) {
+        for (let j = start; j < c; j++) {
+          const d = Math.min(j - start, c - 1 - j) * STEP;
+          maxH[j] = Math.min(MAX, (title ? 0.6 : 1.2) + d * (title ? 0.55 : 0.7));
+        }
+        start = -1;
+      }
+    }
+    // une première couche déjà posée, irrégulière
+    const p1 = rand(0, 6), p2 = rand(0, 6), base = title ? 2.4 : 3.6;
+    for (let c = 0; c < n; c++) {
+      if (!maxH[c]) continue;
+      h[c] = Math.min(maxH[c], base + Math.sin(c * 0.09 + p1) * 1.1 + Math.sin(c * 0.23 + p2) * 0.6);
+    }
+    const glints = Array.from({ length: Math.ceil(n / 40) }, () => ({ c: Math.floor(rand(0, n)), ph: rand(0, 6.28) }));
+    return { el, w: r.width, n, surf, h, maxH, title, glints, r };
+  }
+  function colliders(now) {
+    if (now - scanAt > 400) { els = [...document.querySelectorAll('[data-drift]')]; scanAt = now; }
+    const out = [];
+    for (const el of els) {
+      const r = el.getBoundingClientRect();
+      if (r.width < 24 || r.bottom < -20 || r.top > H + 20) continue;
+      const title = el.dataset.drift === 'title';
+      if (title) {
+        if (!el.closest('.title')?.classList.contains('is-written')) continue;
+      } else if (Math.abs(r.width - el.offsetWidth) > 1.5 || Math.abs(r.height - el.offsetHeight) > 1.5) continue; // en pleine animation
+      let st = states.get(el);
+      if (!st || Math.abs(st.w - r.width) > 1) {
+        st = build(el, r, title);
+        if (!st) continue;
+        states.set(el, st);
+      }
+      st.r = r;
+      out.push(st);
+    }
+    return out;
+  }
+  let live = [];
+  const api = {
+    frame(now) { live = colliders(now); },
+    // Un flocon (avant et après son déplacement) touche-t-il une surface ? Si oui il s'y dépose.
+    land(x, y0, y1, size) {
+      for (const st of live) {
+        const r = st.r;
+        if (x < r.left || x >= r.right) continue;
+        const c = Math.floor((x - r.left) / STEP);
+        const sf = st.surf[c];
+        if (Number.isNaN(sf) || !st.maxH[c]) continue;
+        const sy = r.top + sf - st.h[c];
+        if (y0 < sy && y1 >= sy) {
+          const amp = (st.title ? 0.8 : 1.3) + size * 0.8;
+          for (let k = -5; k <= 5; k++) {
+            const cc = c + k;
+            if (cc < 0 || cc >= st.n || !st.maxH[cc]) continue;
+            st.h[cc] = Math.min(st.maxH[cc], st.h[cc] + amp * Math.exp(-(k * k) / 7));
+          }
+          return true;
+        }
+      }
+      return false;
+    },
+    blow(x, y, vx, vy) {
+      for (const st of live) {
+        const r = st.r;
+        if (x < r.left - 24 || x > r.right + 24) continue;
+        let total = 0;
+        for (let c = 0; c < st.n; c++) {
+          if (!st.h[c]) continue;
+          const cx = r.left + c * STEP + STEP / 2;
+          const top = r.top + st.surf[c] - st.h[c];
+          if (Math.abs(cx - x) > 26 || y < top - 34 || y > r.top + st.surf[c] + 44) continue;
+          const take = st.h[c] * 0.92;
+          st.h[c] -= take;
+          total += take;
+          if (Math.random() < take * 0.22 && puffs.length < 260) {
+            puffs.push({ x: cx, y: top + rand(0, 2), vx: vx * 0.035 + rand(-1.4, 1.4), vy: -rand(0.8, 3.2) + vy * 0.02, life: rand(0.5, 1.1), max: 1, r: rand(0.8, 2.2) });
+            puffs[puffs.length - 1].max = puffs[puffs.length - 1].life;
+          }
+        }
+        if (total > 3) sound.sniff?.(); // petit « pfff »
+      }
+    },
+    update(dt) {
+      for (const st of live) {
+        const h = st.h, m = st.maxH;
+        for (let c = 0; c < st.n - 1; c++) {
+          if (!m[c] || !m[c + 1]) continue;
+          const d = h[c] - h[c + 1];
+          if (Math.abs(d) > 1.3) {
+            const mv = (Math.abs(d) - 1.3) * 0.22 * Math.sign(d);
+            h[c] -= mv; h[c + 1] += mv;
+          }
+        }
+      }
+      for (let i = puffs.length - 1; i >= 0; i--) {
+        const p = puffs[i];
+        p.life -= dt / 60;
+        if (p.life <= 0) { puffs.splice(i, 1); continue; }
+        p.vy += 0.09 * dt; p.vx *= 0.97 ** dt;
+        p.x += p.vx * dt; p.y += p.vy * dt;
+      }
+    },
+    draw(now) {
+      ctx.clearRect(0, 0, W, H);
+      for (const st of live) {
+        const r = st.r, h = st.h, sf = st.surf;
+        const X = (c) => r.left + c * STEP + STEP / 2;
+        let start = -1;
+        for (let c = 0; c <= st.n; c++) {
+          const ok = c < st.n && st.maxH[c] > 0;
+          if (ok && start < 0) start = c;
+          if (ok || start < 0) continue;
+          const end = c - 1;
+          let peak = 0;
+          for (let j = start; j <= end; j++) peak = Math.max(peak, h[j]);
+          if (peak > 0.3) {
+            ctx.beginPath();
+            ctx.moveTo(X(start) - STEP / 2, r.top + sf[start] + 1);
+            for (let j = start; j <= end; j++) ctx.lineTo(X(j), r.top + sf[j] - h[j]);
+            ctx.lineTo(X(end) + STEP / 2, r.top + sf[end] + 1);
+            for (let j = end; j >= start; j--) ctx.lineTo(X(j), r.top + sf[j] + 1.6);
+            ctx.closePath();
+            const g = ctx.createLinearGradient(0, r.top - 12, 0, r.top + 3);
+            g.addColorStop(0, '#ffffff'); g.addColorStop(0.75, '#eef4fb'); g.addColorStop(1, '#c9d9e8');
+            ctx.fillStyle = g;
+            ctx.shadowColor = 'rgba(0, 18, 10, 0.45)'; ctx.shadowBlur = 3; ctx.shadowOffsetY = 1.2;
+            ctx.fill();
+            ctx.shadowColor = 'transparent';
+          }
+          start = -1;
+        }
+        // reflets qui scintillent à la surface
+        for (const gl of st.glints) {
+          if (h[gl.c] < 2) continue;
+          const a = Math.max(0, Math.sin(now / 300 + gl.ph)) ** 6;
+          if (a < 0.05) continue;
+          ctx.globalAlpha = a;
+          ctx.fillStyle = '#fff';
+          const gx = X(gl.c), gy = r.top + sf[gl.c] - h[gl.c] + 1.2;
+          ctx.fillRect(gx - 2.5, gy - 0.4, 5, 0.8);
+          ctx.fillRect(gx - 0.4, gy - 2.5, 0.8, 5);
+          ctx.globalAlpha = 1;
+        }
+      }
+      for (const p of puffs) {
+        ctx.globalAlpha = Math.min(1, p.life / p.max * 1.5) * 0.9;
+        ctx.fillStyle = '#fff';
+        ctx.beginPath(); ctx.arc(p.x, p.y, p.r, 0, Math.PI * 2); ctx.fill();
+      }
+      ctx.globalAlpha = 1;
+    },
+  };
+  // Doigt qui passe sur la neige : elle part en poudre.
+  let last = null;
+  window.addEventListener('pointerdown', (e) => { last = { x: e.clientX, y: e.clientY }; api.blow(e.clientX, e.clientY, 0, -20); }, { passive: true });
+  window.addEventListener('pointermove', (e) => {
+    if (!(e.buttons || e.pointerType === 'touch') || !last) return;
+    api.blow(e.clientX, e.clientY, e.clientX - last.x, e.clientY - last.y);
+    last = { x: e.clientX, y: e.clientY };
+  }, { passive: true });
+  window.addEventListener('pointerup', () => { last = null; }, { passive: true });
+  return api;
+}
+
 // ---------- Neige en trois profondeurs ----------
-export function startSnow(canvas) {
+export function startSnow(canvas, driftCanvas) {
+  const drifts = driftCanvas && !reduceMotion ? createDrifts(driftCanvas) : null;
   const ctx = canvas.getContext('2d');
   const bokeh = makeDot(64, 'rgba(247,242,231,0.55)', 'rgba(247,242,231,0)');
   const soft = makeDot(16, 'rgba(247,242,231,0.95)', 'rgba(247,242,231,0)');
@@ -100,7 +338,9 @@ export function startSnow(canvas) {
     // Vent qui varie doucement, avec des rafales.
     const wind = Math.sin(now / 5200) * 0.35 + Math.sin(now / 1900) * 0.15 + Math.max(0, Math.sin(now / 9000)) ** 8 * 1.6;
     pointer.vx *= 0.9; pointer.vy *= 0.9;
+    drifts?.frame(now);
     for (const f of flakes) {
+      const yBefore = f.y + f.py;
       f.sway += 0.012 * dt;
       const depth = f.layer === 0 ? 0.5 : f.layer === 1 ? 1 : 1.6;
       f.y += f.vy * dt;
@@ -116,11 +356,14 @@ export function startSnow(canvas) {
         f.py += (dy / d) * force * dt + pointer.vy * 0.06 * depth;
       }
       f.px *= 0.96 ** dt; f.py *= 0.96 ** dt;
+      // les flocons du plan du milieu se posent sur l'interface
+      if (drifts && f.layer === 1 && drifts.land(f.x + f.px, yBefore, f.y + f.py, f.r)) { Object.assign(f, make(f.layer, -20)); continue; }
       if (f.y > h + 20) Object.assign(f, make(f.layer, -20));
       if (f.x > w + 20) f.x = -20;
       if (f.x < -20) f.x = w + 20;
     }
     draw();
+    if (drifts) { drifts.update(dt); drifts.draw(now); }
   };
   requestAnimationFrame(tick);
 }

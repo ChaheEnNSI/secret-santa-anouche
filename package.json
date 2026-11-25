@@ -9,7 +9,7 @@
     "dev": "wrangler dev",
     "deploy": "npm run build && wrangler deploy",
     "preview": "node tools/build-preview.mjs",
-    "build": "esbuild client/ball.js --bundle --format=esm --minify --target=es2020 --outfile=public/ball.js --log-level=warning",
+    "build": "esbuild client/gl.js --bundle --format=esm --minify --target=es2020 --outfile=public/gl.js --log-level=warning",
     "deploy:et-effacer-les-tirages": "npm run build && wrangler deploy && sh tools/reset-remote.sh --confirmer"
   },
   "devDependencies": {

@@ -63,6 +63,7 @@ function show(name, { push = true, animate = true } = {}) {
   current = name;
   if (name === 'gift') startGiftLoop();
   else leaveGift();
+  syncTree();
 }
 
 window.addEventListener('popstate', (e) => {
@@ -163,6 +164,7 @@ function renderMe() {
   const mine = store.get('token') && state.people.some((p) => p.name === name);
   $('#picker').hidden = !!mine;
   $('#me').hidden = !mine;
+  syncTree();
   if (mine) {
     $('#me-name').textContent = name;
     const done = store.get('revealed') === '1';
@@ -499,13 +501,13 @@ function ballAnchor() {
 }
 function loadBall() {
   if (reduceMotion) return Promise.resolve(null);
-  ballLoading ||= Promise.resolve(document.fonts?.load('italic 600 100px Fraunces')).catch(() => null).then(() => import('./ball.js'))
-    .then((m) => { ball = m.createBall({ canvas: glCanvas, anchor: ballAnchor }); return ball; })
+  ballLoading ||= Promise.resolve(document.fonts?.load('italic 600 100px Fraunces')).catch(() => null).then(() => import('./gl.js'))
+    .then((m) => { ball = m.createBall({ canvas: glCanvas, anchor: ballAnchor, sound }); return ball; })
     .catch(() => null);
   return ballLoading;
 }
 const ballMode = () => !!ball && gift.classList.contains('is-gl');
-window.__santa = { get ball() { return ball; } }; // pour les essais automatiques
+window.__santa = { get ball() { return ball; }, get tree() { return tree; } }; // pour les essais automatiques
 // Lutin têtu installé sur le couvercle : c'est lui qui empêche le cadeau de s'ouvrir.
 let sitter = null;
 function placeSitter() {
@@ -844,6 +846,7 @@ async function openGift() {
   if (Math.abs(dy) > 2) reveal.animate([{ translate: `0 ${dy}px` }, { translate: '0 0' }], { duration: 750, easing: 'cubic-bezier(0.3, 1.25, 0.4, 1)' });
   const r = reveal.getBoundingClientRect();
   overlay.burst(r.left + r.width / 2, r.top + r.height * 0.45, 120, 0.8);
+  if (ballMode()) { ball.fireworks(); return; }
   const W = window.innerWidth;
   [[0.22, 0.2, 'gold', 150], [0.78, 0.16, 'red', 450], [0.5, 0.1, 'white', 800], [0.3, 0.12, 'gold', 1150], [0.7, 0.22, 'gold', 1500]].forEach(([fx, fy, tone, delay]) => {
     setTimeout(() => { overlay.firework(W * fx, window.innerHeight * fy + 60, tone); sound.pop(); }, delay);
@@ -879,7 +882,7 @@ function prepareLetters(word, set = false) {
   const n = set ? letters.length : Math.max(CELLS, letters.length);
   const off = Math.floor((n - letters.length) / 2);
   revealName.classList.add('is-board');
-  revealName.innerHTML = `<span class="board${set ? ' is-done' : ''}" role="img"${set ? ` aria-label="${esc(word)}"` : ''}>${Array.from({ length: n }, (_, i) => flapHTML(set ? letters[i] : '')).join('')}</span>`;
+  revealName.innerHTML = `<span class="board${set ? ' is-done' : ''}" data-drift role="img"${set ? ` aria-label="${esc(word)}"` : ''}>${Array.from({ length: n }, (_, i) => flapHTML(set ? letters[i] : '')).join('')}</span>`;
   flaps = [...revealName.firstElementChild.children].map((el, i) => {
     const [top, bot, fTop, fBot] = el.children;
     return {
@@ -1197,8 +1200,47 @@ document.addEventListener('click', (e) => {
 });
 
 // ---------- Démarrage ----------
-startSnow($('#snow'));
+startSnow($('#snow'), $('#drifts'));
 try { history.replaceState({ screen: 'home' }, ''); } catch { /* cadre restreint */ }
+
+// ---------- Le sapin 3D de l'accueil ----------
+let tree = null;
+let treeLoading = null;
+function syncTree() {
+  if (!tree) return;
+  if (current === 'home' && !$('#picker').hidden && !document.hidden) { tree.reset(); tree.start(); } else tree.stop();
+}
+document.addEventListener('visibilitychange', syncTree);
+function loadTree() {
+  if (reduceMotion || treeLoading) return treeLoading;
+  const canvas = $('#tree');
+  treeLoading = Promise.resolve(document.fonts?.load('italic 600 100px Fraunces')).catch(() => null)
+    .then(() => import('./gl.js'))
+    .then((m) => {
+      tree = m.createTree({
+        canvas,
+        people: state.people.map((p) => p.name),
+        sound,
+        onPick: (name) => {
+          flash.classList.remove('is-on');
+          void flash.offsetWidth;
+          flash.classList.add('is-on');
+          selectName(name, null);
+        },
+      });
+      if (!tree) return null;
+      $('#picker').classList.add('has-tree');
+      $('#picker .hint').textContent = 'Fais tourner le sapin du doigt et touche la boule à ton nom.';
+      syncTree();
+      return tree;
+    })
+    .catch(() => null);
+  return treeLoading;
+}
+$('#list-toggle').addEventListener('click', () => {
+  const open = $('#picker').classList.toggle('show-list');
+  $('#list-toggle').textContent = open ? 'Masquer la liste' : 'Je ne trouve pas ma boule';
+});
 
 // ---------- Lutin espion qui passe la tête au bord de l'écran ----------
 const peek = { timer: 0, el: null, caught: 0 };
@@ -1248,4 +1290,5 @@ async function doPeek() {
   }
   schedulePeek(4500);
   if (store.get('token')) loadBall();
+  else if (state.people.length) loadTree();
 })();

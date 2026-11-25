@@ -91,6 +91,7 @@
   </div>
 
   <canvas id="snow" class="layer layer--snow" aria-hidden="true"></canvas>
+  <canvas id="drifts" class="layer layer--drifts" aria-hidden="true"></canvas>
   <canvas id="confetti" class="layer layer--confetti" aria-hidden="true"></canvas>
   <div class="flash" id="flash" aria-hidden="true"></div>
   <canvas class="gl" id="gl" aria-hidden="true" hidden></canvas>
@@ -104,7 +105,7 @@
       <header class="hero">
         <h1 class="title">
           <span class="sr-only">Secret Santa</span>
-          <svg class="title__svg" viewBox="0 0 620 150" aria-hidden="true">
+          <svg class="title__svg" viewBox="0 0 620 150" aria-hidden="true" data-drift="title">
             <defs>
               <linearGradient id="foil" x1="-1" y1="0" x2="0" y2="0.3">
                 <stop offset="0" stop-color="#f7f2e7"/>
@@ -123,14 +124,16 @@
 
       <div class="picker" id="picker">
         <h2 class="who">Qui es-tu&#8239;?</h2>
+        <div class="tree-wrap"><canvas class="tree" id="tree" aria-hidden="true"></canvas></div>
         <ul class="tags" id="tags" aria-label="Participants"></ul>
         <p class="hint">Touche ton prénom pour découvrir qui tu as pioché.</p>
+        <button class="linkish list-toggle" id="list-toggle" type="button">Je ne trouve pas ma boule</button>
       </div>
 
-      <div class="card me" id="me" hidden>
+      <div class="card me" id="me" data-drift hidden>
         <p class="me__hello">Tu es <span id="me-name"></span></p>
         <p class="me__text" id="me-text">Un téléphone, un seul tirage.</p>
-        <button class="btn" id="me-btn" type="button">Revoir qui j'ai pioché</button>
+        <button class="btn" id="me-btn" type="button" data-drift>Revoir qui j'ai pioché</button>
       </div>
     </section>
 
@@ -143,7 +146,7 @@
       <h2 class="hello">Salut <span class="hello__name" id="q-name"></span></h2>
       <p class="lead">Contrôle d'identité. Le Père Noël a durci la procédure cette année.</p>
 
-      <div class="card check" id="check">
+      <div class="card check" id="check" data-drift>
         <span class="seal" aria-hidden="true"><svg viewBox="0 0 24 24"><path d="M6.5 12.5l3.5 3.5 7.5-8"/></svg><span>Vérifié</span></span>
         <p class="check__warn" id="check-warn" hidden></p>
 
@@ -181,12 +184,12 @@
         <form class="unlock" id="unlock" hidden novalidate>
           <label class="unlock__label" for="code-input">Ton code personnel est affiché sous ton tirage, sur le téléphone où tu l'as ouvert.</label>
           <input class="field field--code" id="code-input" maxlength="4" autocomplete="off" autocapitalize="characters" autocorrect="off" spellcheck="false" placeholder="Code">
-          <button class="btn" type="submit">Débloquer</button>
+          <button class="btn" type="submit" data-drift>Débloquer</button>
           <p class="status" id="unlock-status" role="status" aria-live="polite"></p>
         </form>
 
         <div class="check__done" id="check-done" hidden>
-          <button class="btn" id="enter-btn" type="button">Découvrir mon tirage</button>
+          <button class="btn" id="enter-btn" type="button" data-drift>Découvrir mon tirage</button>
           <p class="fineprint" id="fineprint"></p>
         </div>
       </div>
@@ -233,7 +236,7 @@
           <span class="taps" id="taps" aria-hidden="true"></span>
         </button>
 
-        <div class="reveal" id="reveal" hidden>
+        <div class="reveal" id="reveal" data-drift hidden>
           <span class="reveal__border" aria-hidden="true"></span>
           <span class="reveal__glare" aria-hidden="true"></span>
           <span class="twinkle" aria-hidden="true"></span><span class="twinkle" aria-hidden="true"></span><span class="twinkle" aria-hidden="true"></span><span class="twinkle" aria-hidden="true"></span>

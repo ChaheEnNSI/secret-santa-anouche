@@ -15,7 +15,7 @@ const rnd = (a, b) => a + Math.random() * (b - a);
 
 // ---------- Textures peintes ----------
 // Une teinte par participant (dans l'ordre de la liste).
-const PALETTES = [
+export const PALETTES = [
   ['#9c0c22', '#c0112b', '#8f0a1f'], // rouge
   ['#05402a', '#0b7d4c', '#053524'], // émeraude
   ['#0a1f5c', '#1b42ad', '#081a4d'], // bleu nuit
@@ -27,7 +27,7 @@ const PALETTES = [
   ['#cfcabd', '#f1ede4', '#c5bfb1'], // argent
   ['#2a5d7a', '#5ca6cd', '#234f69'], // glacier
 ];
-function paintBauble(size = 2048, pal = PALETTES[0], label = '') {
+export function paintBauble(size = 2048, pal = PALETTES[0], label = '', labelScale = 1) {
   const W = size, H = size / 2;
   const mk = () => { const c = document.createElement('canvas'); c.width = W; c.height = H; return c; };
   const colorC = mk(), roughC = mk();
@@ -100,10 +100,10 @@ function paintBauble(size = 2048, pal = PALETTES[0], label = '') {
     both((c) => {
       c.save();
       c.textAlign = 'center'; c.textBaseline = 'middle';
-      let fs = 170 * s;
+      let fs = 170 * s * labelScale;
       c.font = `italic 600 ${fs}px Fraunces, Georgia, serif`;
       const w = c.measureText(label).width;
-      if (w > 610 * s) { fs *= (610 * s) / w; c.font = `italic 600 ${fs}px Fraunces, Georgia, serif`; }
+      if (w > 610 * s * labelScale) { fs *= (610 * s * labelScale) / w; c.font = `italic 600 ${fs}px Fraunces, Georgia, serif`; }
       c.fillText(label, 0.25 * W, H / 2 + 6 * s);
       c.fillText(label, 0.75 * W, H / 2 + 6 * s);
       c.restore();
@@ -130,7 +130,7 @@ function paintBauble(size = 2048, pal = PALETTES[0], label = '') {
   return { colorC, roughC };
 }
 
-function radialTexture(stops) {
+export function radialTexture(stops) {
   const c = document.createElement('canvas');
   c.width = c.height = 256;
   const ctx = c.getContext('2d');
@@ -143,7 +143,7 @@ function radialTexture(stops) {
 }
 
 // ---------- Environnement reflété (la nuit du site : lune, guirlande, fenêtre du chalet, neige) ----------
-function buildEnvironment(renderer) {
+export function buildEnvironment(renderer) {
   const env = new Scene();
   const domeGeo = new SphereGeometry(60, 48, 24);
   const pos = domeGeo.attributes.position;
@@ -318,7 +318,7 @@ function buildShards(seeds, material) {
 }
 
 // ---------- Poussière d'or et éclats ----------
-function makeDust(capacity) {
+export function makeDust(capacity, ring = false) {
   const g = new BufferGeometry();
   const pos = new Float32Array(capacity * 3), size = new Float32Array(capacity), alpha = new Float32Array(capacity), col = new Float32Array(capacity * 3);
   g.setAttribute('position', new BufferAttribute(pos, 3));
@@ -355,11 +355,12 @@ function makeDust(capacity) {
   return {
     points, mat, P,
     emit(o) {
-      for (let tries = 0; tries < capacity; tries++) {
+      if (ring) cursor = (cursor + 1) % capacity; // tampon circulaire : on écrase le plus ancien
+      else for (let tries = 0; tries < capacity; tries++) {
         cursor = (cursor + 1) % capacity;
         if (!P[cursor].fixed && P[cursor].life <= 0) break;
       }
-      Object.assign(P[cursor], { drag: 1.5, grav: 0, tw: rnd(0, TAU), r: 1, g: 0.8, b: 0.42, fixed: false }, o);
+      Object.assign(P[cursor], { drag: 1.5, grav: 0, tw: rnd(0, TAU), r: 1, g: 0.8, b: 0.42, fixed: false, strobe: false, wob: 0.08 }, o);
       P[cursor].max = P[cursor].life;
       return P[cursor];
     },
@@ -374,11 +375,11 @@ function makeDust(capacity) {
           q.life -= dt;
           const k = Math.exp(-q.drag * dt);
           q.vx *= k; q.vy = q.vy * k + q.grav * dt; q.vz *= k;
-          q.x += (q.vx + Math.sin(t * 1.3 + q.tw) * 0.08) * dt; q.y += q.vy * dt; q.z += q.vz * dt;
+          q.x += (q.vx + Math.sin(t * 1.3 + q.tw) * q.wob) * dt; q.y += q.vy * dt; q.z += q.vz * dt;
         }
         pos[i * 3] = q.x; pos[i * 3 + 1] = q.y; pos[i * 3 + 2] = q.z;
         const f = q.fixed ? 1 : Math.min(1, q.life / (q.max * 0.45)) * Math.min(1, (q.max - q.life) * 14);
-        alpha[i] = f * (0.55 + 0.45 * Math.sin(t * 7 + q.tw * 3));
+        alpha[i] = f * (q.strobe ? (Math.sin(t * 46 + q.tw * 9) > 0.25 ? 1.25 : 0.06) : 0.55 + 0.45 * Math.sin(t * 7 + q.tw * 3));
         size[i] = q.size;
         col[i * 3] = q.r; col[i * 3 + 1] = q.g; col[i * 3 + 2] = q.b;
       }
@@ -390,7 +391,7 @@ function makeDust(capacity) {
 }
 
 // ---------- La boule ----------
-export function createBall({ canvas, anchor }) {
+export function createBall({ canvas, anchor, sound = {} }) {
   let renderer;
   try {
     renderer = new WebGLRenderer({ canvas, alpha: true, antialias: true, powerPreference: 'high-performance' });
@@ -465,6 +466,12 @@ export function createBall({ canvas, anchor }) {
 
   const dust = makeDust(900);
   scene.add(dust.points);
+  const fw = makeDust(9000, true);   // traînées et éclairs (tampon circulaire, vie courte)
+  fw.mat.depthTest = false;
+  scene.add(fw.points);
+  const fwHeads = makeDust(1800);     // étincelles principales : jamais écrasées par leurs traînées
+  fwHeads.mat.depthTest = false;
+  scene.add(fwHeads.points);
   const shards = buildShards(seeds, glass);
   shards.forEach((s) => scene.add(s.mesh));
 
@@ -559,6 +566,7 @@ export function createBall({ canvas, anchor }) {
     camera.rotation.set(0, 0, 0);
     pivot.visible = false; ballMesh.visible = true;
     shards.forEach((s) => { s.mesh.visible = false; });
+    FW.on = false; FW.heads = []; FW.rockets = []; fw.clear(); fwHeads.clear(); canvas.style.zIndex = '';
     crew.forEach((c) => { c.sprite.visible = false; });
     dust.clear();
     motes.forEach((m) => { m.q.fixed = true; m.q.life = 1; });
@@ -596,10 +604,125 @@ export function createBall({ canvas, anchor }) {
     watchSpeed(raw);
     step(realDt);
     if (!S.holdRender) renderer.render(scene, camera);
-    if (S.shattered && S.shatterT > 1.2 && !S.flying && S.alive === 0) stop();
+    if (!FW.on && S.shattered && S.shatterT > 1.2 && !S.flying && S.alive === 0) stop();
+  }
+
+  // ---------- Feu d'artifice final (dans le ciel, derrière la carte) ----------
+  const FW = { on: false, t: 0, shells: [], heads: [], rockets: [] };
+  const TONES = {
+    gold: [[1, 0.82, 0.42], [1, 0.9, 0.62]],
+    red: [[1, 0.25, 0.3], [1, 0.5, 0.45]],
+    green: [[0.35, 1, 0.55], [0.6, 1, 0.7]],
+    white: [[1, 0.97, 0.9], [0.85, 0.92, 1]],
+    blue: [[0.45, 0.65, 1], [0.7, 0.85, 1]],
+  };
+  const pick = (tone) => { const c = TONES[tone] || TONES.gold; return c[Math.random() < 0.5 ? 0 : 1]; };
+  // Formes : liste de points (x, y) dans le plan face à toi, vitesse proportionnelle à la position.
+  function shapePoints(kind, n) {
+    const pts = [];
+    if (kind === 'heart') {
+      for (let i = 0; i < n; i++) {
+        const t = (i / n) * TAU;
+        pts.push([16 * Math.sin(t) ** 3 / 17, (13 * Math.cos(t) - 5 * Math.cos(2 * t) - 2 * Math.cos(3 * t) - Math.cos(4 * t)) / 17]);
+      }
+    } else if (kind === 'ring') {
+      for (let i = 0; i < n; i++) { const t = (i / n) * TAU; pts.push([Math.cos(t), Math.sin(t)]); }
+    } else if (kind === 'star') {
+      for (let i = 0; i < n; i++) {
+        const t = (i / n) * 10, k = Math.floor(t), f = t - k;
+        const r0 = k % 2 ? 0.42 : 1, r1 = k % 2 ? 1 : 0.42;
+        const a0 = (k / 10) * TAU + Math.PI / 2, a1 = ((k + 1) / 10) * TAU + Math.PI / 2;
+        const x0 = Math.cos(a0) * r0, y0 = Math.sin(a0) * r0, x1 = Math.cos(a1) * r1, y1 = Math.sin(a1) * r1;
+        pts.push([x0 + (x1 - x0) * f, y0 + (y1 - y0) * f]);
+      }
+    } else if (kind === 'paw') {
+      // La patte de Lino : un coussinet et quatre doigts.
+      const blob = (cx, cy, rx, ry, m) => { for (let i = 0; i < m; i++) { const t = (i / m) * TAU; pts.push([cx + Math.cos(t) * rx, cy + Math.sin(t) * ry]); } };
+      blob(0, -0.32, 0.5, 0.42, Math.round(n * 0.36));
+      [[-0.66, 0.3], [-0.24, 0.66], [0.24, 0.66], [0.66, 0.3]].forEach(([x, y]) => blob(x, y, 0.2, 0.25, Math.round(n * 0.16)));
+    }
+    return pts;
+  }
+  function burst(x, y, z, kind, tone) {
+    const scale = Math.abs(S.camZ - z) / S.camZ; // plus loin = plus grand dans le monde, même taille à l'écran
+    const P = (o) => fw.emit(o);
+    sound.pop?.();
+    // éclair central
+    for (let i = 0; i < 26; i++) {
+      tmp2.randomDirection().multiplyScalar(rnd(0.2, 1.2) * scale);
+      P({ life: rnd(0.15, 0.35), x, y, z, vx: tmp2.x, vy: tmp2.y, vz: tmp2.z, size: rnd(18, 30), drag: 4, r: 1, g: 0.95, b: 0.85, wob: 0 });
+    }
+    const add = (vx, vy, vz, o) => {
+      const [r, g, b] = pick(tone).map((v) => v * 1.35); // plus de 1 : cœur des étincelles chauffé à blanc
+      const q = fwHeads.emit({ life: rnd(1.5, 2.1), x, y, z, vx, vy, vz, size: rnd(10, 14), drag: 1.25, grav: -1.5 * scale, r, g, b, wob: 0, ...o });
+      FW.heads.push({ q, trail: o?.trail ?? 0.32, every: o?.every ?? 1, k: 0, crackle: o?.crackle || false });
+    };
+    if (kind === 'peony' || kind === 'crackle') {
+      const n = 170;
+      for (let i = 0; i < n; i++) {
+        tmp2.randomDirection().multiplyScalar(rnd(2.3, 2.6) * scale);
+        add(tmp2.x, tmp2.y, tmp2.z, { crackle: kind === 'crackle' });
+      }
+    } else if (kind === 'willow') {
+      for (let i = 0; i < 110; i++) {
+        tmp2.randomDirection().multiplyScalar(rnd(1.9, 2.2) * scale);
+        add(tmp2.x, tmp2.y + 0.4 * scale, tmp2.z, { life: rnd(2.8, 3.4), drag: 0.85, grav: -1.05 * scale, size: rnd(7, 9.5), trail: 0.95, every: 2, r: 1, g: 0.78, b: 0.36 });
+      }
+    } else {
+      const pts = shapePoints(kind, kind === 'paw' ? 260 : 170);
+      const k = (kind === 'paw' ? 2.2 : 2.0) * scale, tilt = kind === 'paw' ? rnd(-0.12, 0.12) : rnd(-0.2, 0.2);
+      pts.forEach(([px, py]) => {
+        const c = Math.cos(tilt), s2 = Math.sin(tilt);
+        add((px * c - py * s2) * k, (px * s2 + py * c) * k, rnd(-0.15, 0.15) * scale, { drag: 1.9, grav: -0.3 * scale, life: rnd(2.3, 2.7), trail: 0.3, size: rnd(11, 14), ...(kind === 'paw' ? { r: 1.4, g: 1.15, b: 0.6 } : {}) });
+      });
+    }
+  }
+  function launch(xs, ys, z, kind, tone, delay) {
+    // xs, ys : position d'explosion en fraction de l'écran (0 = gauche / haut).
+    FW.rockets.push({ at: FW.t + delay, xs, ys, z, kind, tone, started: false });
+  }
+  function screenToWorld(xs, ys, z) {
+    const dist = S.camZ - z;
+    const hh = Math.tan((FOV * Math.PI) / 360) * dist;
+    return { x: (xs - 0.5) * 2 * hh * camera.aspect, y: (0.5 - ys) * 2 * hh };
+  }
+  function fireworksStep(dt) {
+    FW.t += dt;
+    FW.rockets.forEach((r) => {
+      if (r.done || FW.t < r.at) return;
+      const end = screenToWorld(r.xs, r.ys, r.z);
+      const start = screenToWorld(r.xs + rnd(-0.06, 0.06), 1.08, r.z);
+      if (!r.started) { r.started = true; r.t0 = FW.t; r.dur = rnd(0.85, 1.1); sound.sweep?.('sine', 600, 1700, r.dur * 0.9, 0.025); }
+      const u = Math.min(1, (FW.t - r.t0) / r.dur);
+      const e = 1 - (1 - u) ** 2.2;
+      const x = start.x + (end.x - start.x) * e, y = start.y + (end.y - start.y) * e;
+      for (let i = 0; i < 2; i++) fw.emit({ life: rnd(0.25, 0.5), x: x + rnd(-0.03, 0.03), y, z: r.z, vx: rnd(-0.2, 0.2), vy: rnd(-0.8, -0.2), vz: 0, size: rnd(4.5, 7.5), drag: 2, grav: -0.6, r: 1, g: 0.78, b: 0.45, wob: 0 });
+      fw.emit({ life: 0.06, x, y, z: r.z, vx: 0, vy: 0, vz: 0, size: 15, drag: 0, r: 1, g: 0.95, b: 0.8, wob: 0 });
+      if (u >= 1) { r.done = true; burst(x, y, r.z, r.kind, r.tone); }
+    });
+    // Traînées : chaque étincelle laisse derrière elle une poussière qui s'éteint.
+    FW.heads = FW.heads.filter((h) => {
+      const q = h.q;
+      if (q.life <= 0) {
+        if (h.crackle) for (let i = 0; i < 3; i++) fw.emit({ life: rnd(0.35, 0.7), x: q.x, y: q.y, z: q.z, vx: rnd(-0.5, 0.5), vy: rnd(-0.5, 0.3), vz: 0, size: rnd(5, 8), drag: 2, grav: -0.5, r: 1, g: 1, b: 0.92, strobe: true, wob: 0 });
+        if (h.crackle && Math.random() < 0.02) sound.crack?.(0);
+        return false;
+      }
+      h.k += 1;
+      if (h.k % h.every === 0) fw.emit({ life: h.trail * rnd(0.9, 1.35), x: q.x, y: q.y, z: q.z, vx: q.vx * 0.05, vy: q.vy * 0.05 - 0.05, vz: 0, size: q.size * 0.7, drag: 3, grav: -0.35, r: q.r, g: q.g * 0.92, b: q.b * 0.8, wob: 0 });
+      return true;
+    });
+    const alive = fw.update(dt, S.t) + fwHeads.update(dt, S.t);
+    if (FW.t > 2 && !FW.heads.length && FW.rockets.every((r) => r.done) && alive === 0) endFireworks();
+  }
+  function endFireworks() {
+    FW.on = false;
+    canvas.style.zIndex = '';
+    stop();
   }
 
   function step(realDt) {
+    if (FW.on) { S.t += realDt; fireworksStep(realDt); return; }
     let dt = realDt;
     if (S.shattered) {
       const e = S.shatterT;
@@ -725,6 +848,31 @@ export function createBall({ canvas, anchor }) {
     spinBy(dx) { const d = dx * 0.011; S.spin += d; S.spinV = d * 60; },
     setShaking(v) { S.shaking = v; },
     prepareCrew,
+    // Feu d'artifice final, dans le ciel derrière la carte du prénom.
+    fireworks() {
+      FW.on = true; FW.t = 0; FW.heads = []; FW.rockets = [];
+      fw.clear(); fwHeads.clear(); dust.clear();
+      crew.forEach((c) => { c.sprite.visible = false; });
+      shards.forEach((s) => { s.mesh.visible = false; });
+      halo.material.opacity = 0; core.material.opacity = 0; wave.material.opacity = 0;
+      pivot.visible = false;
+      camera.rotation.set(0, 0, 0);
+      camera.position.set(0, 0, S.camZ);
+      // Autour de la carte : en haut, et dans le ciel libre sous la carte.
+      const plan = [
+        [0.22, 0.14, -4, 'peony', 'red', 0],
+        [0.78, 0.12, -5, 'willow', 'gold', 0.3],
+        [0.5, 0.8, -3, 'paw', 'gold', 0.8],
+        [0.2, 0.64, -4, 'heart', 'red', 1.35],
+        [0.8, 0.66, -4, 'ring', 'green', 1.7],
+        [0.34, 0.16, -5, 'crackle', 'white', 2.15],
+        [0.74, 0.84, -3, 'star', 'gold', 2.6],
+        [0.5, 0.14, -6, 'willow', 'gold', 3.05],
+        [0.3, 0.78, -5, 'crackle', 'gold', 3.5],
+      ];
+      plan.forEach((p) => launch(...p));
+      start();
+    },
     // Quelqu'un cogne de l'intérieur : la boule sursaute et un peu de poussière s'échappe.
     knock() {
       if (S.shattered) return;

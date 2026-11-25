@@ -12,7 +12,10 @@ with sync_playwright() as p:
     errs = []
     pg.on('pageerror', lambda e: errs.append(str(e)))
     pg.goto(BASE); time.sleep(3)
-    pg.tap('.tag[data-name="Anouche"]'); time.sleep(1.2)
+    pg.wait_for_function('!!window.__santa.tree', timeout=60000)
+    pg.evaluate('window.__santa.tree.pickByName("Anouche")')
+    pg.wait_for_function('!document.querySelector("#screen-question").hidden', timeout=90000); time.sleep(1.2)
+    print('choix sur le sapin : écran du contrôle avec', pg.inner_text('#q-name'))
     box = pg.locator('#scanner').bounding_box()
     sx, sy = box['x'] + box['width'] / 2, box['y'] + box['height'] / 2
     pg.mouse.move(sx, sy); pg.mouse.down(); time.sleep(2.3); pg.mouse.up(); time.sleep(1.0)
