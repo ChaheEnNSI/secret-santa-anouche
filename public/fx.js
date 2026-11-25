@@ -504,6 +504,35 @@ export const sound = (() => {
       this.sweep('sine', 120, 38, 0.5, 0.34);
     },
     knock() { this.sweep('sine', 190, 78, 0.07, 0.2); this.sweep('sine', 185, 76, 0.07, 0.17, 0.16); }, // toc-toc venu de l'intérieur
+    pour(d = 0.8) { // or en fusion qui coule : souffle filtré qui monte
+      if (!ready()) return;
+      const t = ctx.currentTime;
+      const src = noise(d);
+      const f = ctx.createBiquadFilter();
+      f.type = 'bandpass'; f.Q.value = 1.4;
+      f.frequency.setValueAtTime(500, t);
+      f.frequency.exponentialRampToValueAtTime(1500, t + d);
+      const g = ctx.createGain();
+      g.gain.setValueAtTime(0.0001, t);
+      g.gain.exponentialRampToValueAtTime(0.07, t + 0.08);
+      g.gain.setValueAtTime(0.07, t + Math.max(0.1, d - 0.1));
+      g.gain.exponentialRampToValueAtTime(0.0001, t + d);
+      src.connect(f).connect(g).connect(ctx.destination);
+      src.start(t);
+      this.sweep('sine', 220, 520, d, 0.035);
+    },
+    hiss() { // neige sur métal brûlant
+      if (!ready()) return;
+      const t = ctx.currentTime;
+      const src = noise(0.5);
+      const f = ctx.createBiquadFilter();
+      f.type = 'highpass'; f.frequency.value = 3800;
+      const g = ctx.createGain();
+      g.gain.setValueAtTime(0.16, t);
+      g.gain.exponentialRampToValueAtTime(0.0001, t + 0.5);
+      src.connect(f).connect(g).connect(ctx.destination);
+      src.start(t);
+    },
     bark() { // aboiement bref et grave
       if (!ready()) return;
       this.sweep('sawtooth', 340, 130, 0.12, 0.13);

@@ -26,6 +26,7 @@ export function elfSVG(variant = 0) {
     <path d="M22.4 41.2L24.8 45.4L27.4 42.4L30 46L32.6 42.4L35.2 45.4L37.6 41.2Z" fill="${cream}"/>
     <rect x="20.3" y="50.2" width="19.4" height="3.4" rx="1.1" fill="#2a1a10"/>
     <rect x="27.7" y="49.6" width="4.6" height="4.6" rx="0.9" fill="none" stroke="#e9c46a" stroke-width="1.3"/>
+    <g class="arm arm-carry"><path d="M24.6 44.4Q34 50.5 45 46.8" stroke="${suit[0]}" stroke-width="4.6" stroke-linecap="round" fill="none"/><path d="M36.4 43.6L45.2 46.2" stroke="${suit[0]}" stroke-width="4.6" stroke-linecap="round"/><circle cx="46.4" cy="46.5" r="3.1" fill="${skin}"/></g>
     <g class="arm arm-cross"><path d="M21 47q9 4.5 18 0" stroke="${suit[0]}" stroke-width="4.6" stroke-linecap="round" fill="none"/><path d="M21 49.4q9 4.5 18 0" stroke="rgba(0,0,0,0.2)" stroke-width="1" fill="none"/><circle cx="21.6" cy="47.3" r="2.9" fill="${skin}"/><circle cx="38.4" cy="47.3" r="2.9" fill="${skin}"/></g>
     <path d="M20.8 30.2L11.6 25.4L17.6 35.6ZM39.2 30.2L48.4 25.4L42.4 35.6Z" fill="${skin}"/>
     <path d="M19 30.6L14.8 28.5L17.7 33ZM41 30.6L45.2 28.5L42.3 33Z" fill="#e9a98a"/>
@@ -55,7 +56,7 @@ export function elfSVG(variant = 0) {
 export function elfStandalone(variant = 0) {
   return elfSVG(variant).replace(
     '<svg class="elf__svg" viewBox="0 0 60 70" aria-hidden="true">',
-    '<svg xmlns="http://www.w3.org/2000/svg" width="240" height="280" viewBox="0 0 60 70"><style>.arm-down,.arm-cross,.arm-pinch,.mouth-smile,.mouth-yuck,.sniff{display:none}</style>',
+    '<svg xmlns="http://www.w3.org/2000/svg" width="240" height="280" viewBox="0 0 60 70"><style>.arm-down,.arm-cross,.arm-carry,.arm-pinch,.mouth-smile,.mouth-yuck,.sniff{display:none}</style>',
   );
 }
 

@@ -1,6 +1,7 @@
 // Secret Santa : parcours et mise en scène.
 import { startSnow, overlay, sound, reduceMotion } from './fx.js';
 import { makeElf, elfStandalone } from './elf.js';
+import { createMolten } from './molten.js';
 
 const $ = (sel) => document.querySelector(sel);
 const elvesBox = document.querySelector('#elves');
@@ -718,7 +719,8 @@ function resetGift() {
   reveal.hidden = true;
   reveal.classList.remove('is-in', 'is-named', 'is-tilting');
   reveal.querySelector('.pawstamp')?.remove();
-  elvesBox.querySelectorAll('.dog, .woof, .lino-tag, .rider, .impact-ring').forEach((el) => el.remove());
+  reveal.querySelector('.molten')?.remove();
+  elvesBox.querySelectorAll('.dog, .woof, .lino-tag, .founder, .cooler, .flake, .steam').forEach((el) => el.remove());
   revealName.textContent = '';
   after.hidden = true;
   gift.classList.toggle('is-gl', !!ball);
@@ -817,7 +819,7 @@ async function openGift() {
   reveal.hidden = false;
   setTimeout(() => { gift.classList.add('is-gone'); reveal.classList.add('is-in'); }, 500);
   $('#gift-title').textContent = 'Et tu as pioché…';
-  $('#gift-hint').textContent = ballMode() ? 'Les lutins rattrapent les lettres et les remettent dans l\'ordre.' : 'Les lutins t\'apportent le prénom, lettre par lettre.';
+  $('#gift-hint').textContent = 'Les lutins coulent le prénom en or, lettre par lettre.';
   await wait(1700);
   gift.hidden = true;
   await deliverLetters();
@@ -891,98 +893,131 @@ function arcFrames(x0, y0, x1, y1, lift, r0, r1, n = 14) {
   return f;
 }
 
-// Lettre plantée dans sa case : cloche et tintement de métal, gerbe d'étincelles, onde au pied de la lettre,
-// la carte encaisse le choc et les lettres déjà posées sursautent de proche en proche.
-function impactFx(x, y, note, spans, idx) {
-  sound.note(note + 2);
-  sound.thump(0);
-  sound.sweep('sine', 3300, 2500, 0.06, 0.05);
-  navigator.vibrate?.(10);
-  overlay.sparkle(x, y - 24, 22, 30);
-  overlay.sparkle(x, y - 4, 8, 44);
-  const ring = document.createElement('i');
-  ring.className = 'impact-ring';
-  ring.style.setProperty('--x', `${x}px`);
-  ring.style.setProperty('--y', `${y}px`);
-  elvesBox.append(ring);
-  ring.addEventListener('animationend', () => ring.remove(), { once: true });
-  reveal.animate([{ translate: '0 0' }, { translate: '0 5px' }, { translate: '0 0' }], { duration: 170, easing: 'ease-out' });
-  spans.forEach((sp, j) => {
-    if (j === idx || !sp.classList.contains('is-placed')) return;
-    sp.animate([{ translate: '0 0' }, { translate: '0 -6px' }, { translate: '0 0' }], { duration: 280, delay: Math.abs(j - idx) * 55, easing: 'ease-out' });
+// Petite animation pilotée image par image : fn reçoit l'avancement de 0 à 1.
+function tween(ms, fn, ease = (k) => k) {
+  return new Promise((resolve) => {
+    const t0 = performance.now();
+    const step = () => {
+      const k = Math.min(1, (performance.now() - t0) / ms);
+      fn(ease(k));
+      if (k < 1) requestAnimationFrame(step); else resolve();
+    };
+    requestAnimationFrame(step);
   });
 }
 
-// Chaque lutin arrive en vol plané, debout sur sa lettre, la plante dans sa case et repart en salto de l'autre côté.
-function deliverLetters() {
-  const fs = parseFloat(getComputedStyle(revealName).fontSize) || 50;
+// ---------- La fonderie : le prénom est coulé en or, lettre par lettre ----------
+const LADLE = '<span class="ladle"><svg viewBox="0 0 50 40" aria-hidden="true"><path d="M0 9H27" stroke="#6b4423" stroke-width="3.4" stroke-linecap="round"/><g class="ladle__pot"><path d="M24 6H48L45.5 25Q36 31 26.5 25Z" fill="#2b2f36"/><path d="M28 12Q30 22 33 26" stroke="rgba(255,255,255,0.14)" stroke-width="1.6" fill="none" stroke-linecap="round"/><ellipse class="ladle__gold" cx="36" cy="6.6" rx="10.8" ry="2.7" fill="#ffd98a"/><path d="M24 6H48" stroke="#5d646e" stroke-width="2.2" stroke-linecap="round"/></g></svg></span>';
+const BUCKET = '<span class="ladle ladle--bucket"><svg viewBox="0 0 50 40" aria-hidden="true"><g class="ladle__pot"><path d="M22 8H48L45 31H25Z" fill="#8fa3b8"/><path d="M25 15H45.6M25.8 23H44.8" stroke="rgba(0,0,0,0.16)" stroke-width="1.2"/><ellipse cx="35" cy="7.4" rx="12.4" ry="4.4" fill="#fff"/><path d="M22 8H48" stroke="#cbd8e4" stroke-width="2.4" stroke-linecap="round"/></g></svg></span>';
+const dot = (cls, x, y) => {
+  const el = document.createElement('i');
+  el.className = cls;
+  el.style.left = `${x}px`;
+  el.style.top = `${y}px`;
+  elvesBox.append(el);
+  return el;
+};
+function snowFall(x, y0, y1) {
+  for (let k = 0; k < 7; k++) {
+    const el = dot('flake', x + rand(-12, 12), y0);
+    el.animate([{ translate: '0 0', opacity: 1 }, { translate: `${rand(-14, 14)}px ${y1 - y0 + rand(-6, 22)}px`, opacity: 0.9 }], { duration: rand(260, 420), delay: k * 22, easing: 'cubic-bezier(0.4, 0, 1, 0.6)', fill: 'both' }).finished.then(() => el.remove(), () => el.remove());
+  }
+}
+function steamPuff(x, y) {
+  for (let k = 0; k < 4; k++) {
+    const el = dot('steam', x + rand(-14, 14), y + rand(-10, 12));
+    el.style.animationDelay = `${k * 70}ms`;
+    el.addEventListener('animationend', () => el.remove(), { once: true });
+  }
+}
+
+// Un lutin fondeur marche sur le haut de la carte avec sa louche et verse l'or dans chaque lettre ;
+// le métal monte dans la lettre (shader), puis un second lutin passe avec un seau de neige :
+// vapeur, le métal refroidit et la lettre se détache en relief.
+async function deliverLetters() {
   const spans = [...revealName.querySelectorAll('.ch')];
+  const fs = parseFloat(getComputedStyle(revealName).fontSize) || 50;
+  const card = reveal.getBoundingClientRect();
+  const molten = createMolten(reveal, spans);
   const rects = spans.map((sp) => sp.getBoundingClientRect());
+  const cxOf = (i) => rects[i].left + rects[i].width / 2;
+  const band = molten ? molten.band : { top: rects[0].top + fs * 0.14, bottom: rects[0].bottom };
   const W = window.innerWidth;
-  const EW = 76, EH = 87;
-  const last = spans.length - 1;
-  const placed = spans.map((span, i) => new Promise((resolve) => {
-    (async () => {
-      await wait(i * 430);
-      const r = rects[i];
-      const cx = r.left + r.width / 2;
-      const dir = i % 2 === 0 ? 1 : -1; // sens du vol : 1 = de gauche à droite
-      const base = 'elf elf--big rider';
-      const elf = makeElf(i % 2, 'elf--big rider is-flailing');
-      elf.style.setProperty('--fs', `${fs}px`);
-      const ch = span.dataset.ch;
-      elf.insertAdjacentHTML('afterbegin', `<span class="elf__board"><span class="ch__ghost">${ch}</span>${letter3D(ch)}</span>`);
-      elvesBox.append(elf);
-      const board = elf.querySelector('.elf__board');
-      const svg = elf.querySelector('.elf__svg');
-      const squash = () => svg.animate([{ transform: 'scale(1, 1)' }, { transform: 'scale(1.22, 0.74)' }, { transform: 'scale(0.9, 1.12)' }, { transform: 'scale(1, 1)' }], { duration: 260, easing: 'ease-out' });
-      const ix = cx - EW / 2, iy = r.top - EH + fs * 0.2; // position du lutin au moment de l'impact
-      const sx = dir > 0 ? -EW - 40 : W + 40, sy = iy - rand(30, 110);
-      const ex = dir > 0 ? W + 40 : -EW - 40, ey = iy + rand(40, 160);
-      const crooked = i === last && spans.length > 1;
-      try {
-        // 1. Vol plané depuis le bord de l'écran, traînée d'étincelles derrière la lettre.
-        sound.sweep('sine', 480, 920, 0.26, 0.028, 0.3);
-        [260, 400, 520].forEach((ms) => setTimeout(() => {
-          if (!board.isConnected) return;
-          const b = board.getBoundingClientRect();
-          overlay.sparkle(b.left + b.width / 2, b.top + b.height / 2, 4, 10);
-        }, ms));
-        await elf.animate(arcFrames(sx, sy, ix, iy, rand(50, 90), dir * 18, 0), { duration: 600, easing: 'cubic-bezier(0.35, 0, 0.85, 0.75)', fill: 'forwards' }).finished;
-        // 2. Impact : la lettre s'enfonce dans sa case, le lutin s'écrase puis se détend.
-        board.remove();
-        span.classList.add('is-placed');
-        if (crooked) {
-          span.classList.add('is-crooked');
-          span.animate([{ transform: 'scale(1.5, 0.5)' }, { transform: `rotate(${dir * 15}deg) translateY(5px)` }], { duration: 220, easing: 'ease-out', fill: 'forwards' });
-        }
-        impactFx(cx, r.bottom - 8, i, spans, i);
-        squash();
-        if (crooked) {
-          // La dernière lettre est restée de travers : il la regarde, puis saute dessus pour la redresser.
-          elf.className = `${base} is-shocked pose-down`;
-          sound.squeak();
-          await wait(420);
-          elf.className = `${base} is-flailing`;
-          await elf.animate(arcFrames(ix, iy, ix, iy, 66, 0, 0), { duration: 460, easing: 'linear', fill: 'forwards' }).finished;
-          span.animate([{ transform: `rotate(${dir * 15}deg) translateY(5px)` }, { transform: `rotate(${dir * -6}deg)` }, { transform: `rotate(${dir * 3}deg)` }, { transform: 'none' }], { duration: 400, easing: 'ease-out', fill: 'forwards' });
-          impactFx(cx, r.bottom - 8, i + 1, spans, i);
-          squash();
-        }
-        resolve();
-        elf.className = `${base} is-cheering`;
-        await wait(120);
-        // 3. Rebond en salto, sortie par l'autre côté.
-        elf.className = base;
-        await elf.animate(arcFrames(ix, iy, ex, ey, rand(90, 140), 0, dir * 360), { duration: 760, easing: 'linear', fill: 'forwards' }).finished;
-      } catch {
-        span.classList.add('is-placed');
-        resolve();
+  const EW = 76, EH = 87, LIP = 102; // LIP : distance entre le bord gauche du lutin et le bec de la louche inclinée
+  const standY = card.top - EH + 6;  // debout sur le bord supérieur de la carte
+  const lipY = standY + 64;
+  const at = (x, y = standY, extra = '') => ({ transform: `translate(${x}px, ${y}px) ${extra}` });
+
+  // 1. Le fondeur saute sur la carte, puis va de lettre en lettre.
+  const founder = makeElf(0, 'elf--big founder pose-carry is-walking');
+  founder.insertAdjacentHTML('beforeend', LADLE);
+  elvesBox.append(founder);
+  let fx = cxOf(0) - LIP;
+  try {
+    await founder.animate(arcFrames(-EW - 30, standY + 70, fx, standY, 52, -10, 0), { duration: 520, easing: 'linear', fill: 'forwards' }).finished;
+    for (let i = 0; i < spans.length; i++) {
+      const nx = cxOf(i) - LIP;
+      if (i > 0) {
+        founder.classList.add('is-walking');
+        await founder.animate([at(fx), at(nx)], { duration: Math.max(170, Math.abs(nx - fx) * 5), easing: 'ease-in-out', fill: 'forwards' }).finished;
       }
-      elf.remove();
-    })();
+      fx = nx;
+      founder.classList.remove('is-walking');
+      founder.classList.add('is-pouring');
+      await wait(110);
+      // La coulée : le filet tombe, le métal monte, le filet se coupe.
+      const x = cxOf(i);
+      const dur = Math.max(440, 780 - i * 85);
+      sound.pour(dur / 1000 + 0.25);
+      if (molten) {
+        await tween(110, (k) => molten.setPour(x, lipY, lipY + (band.bottom - lipY) * k, 1));
+        const sparks = setInterval(() => overlay.sparkle(x, molten.levelY(i), 3, 9), 90);
+        await tween(dur, (k) => { molten.fill[i] = k * 1.07; molten.setPour(x, lipY, molten.levelY(i), 1); });
+        clearInterval(sparks);
+        founder.classList.remove('is-pouring');
+        await tween(120, (k) => molten.setPour(x, lipY + (molten.levelY(i) - lipY) * k, molten.levelY(i), 1 - k * 0.4));
+        molten.setPour(0, 0, 0, 0);
+      } else {
+        await wait(dur);
+        founder.classList.remove('is-pouring');
+        spans[i].classList.add('is-cast');
+      }
+      spans[i].classList.add('is-poured');
+      sound.note(i + 2);
+      navigator.vibrate?.(8);
+      overlay.sparkle(x, (band.top + band.bottom) / 2, 14, 26);
+    }
+  } catch { /* on continue : les lettres seront affichées de toute façon */ }
+  // Travail fini : il saute de la carte et s'en va.
+  founder.classList.add('is-walking');
+  founder.animate(arcFrames(fx, standY, W + 40, standY + 50, 62, 0, 12), { duration: 640, easing: 'linear', fill: 'forwards' }).finished.then(() => founder.remove(), () => founder.remove());
+
+  // 2. Le second lutin traverse en courant, de droite à gauche, en vidant son seau de neige sur le métal.
+  $('#gift-hint').textContent = 'Un seau de neige pour refroidir tout ça.';
+  const cooler = makeElf(1, 'elf--big cooler pose-carry is-walking is-pouring');
+  cooler.insertAdjacentHTML('beforeend', BUCKET);
+  elvesBox.append(cooler);
+  const startX = W + 30, endX = -EW - 50, speed = 0.46; // px par milliseconde
+  const runMs = (startX - endX) / speed;
+  cooler.animate([at(startX, standY, 'scaleX(-1)'), at(endX, standY, 'scaleX(-1)')], { duration: runMs, easing: 'linear', fill: 'forwards' }).finished.then(() => cooler.remove(), () => cooler.remove());
+  // Retourné, son seau est à gauche : le bec est à (x + EW - LIP).
+  const cooled = spans.map((sp, i) => new Promise((resolve) => {
+    const when = Math.max(0, (startX + EW - LIP - cxOf(i)) / speed);
+    setTimeout(async () => {
+      const x = cxOf(i);
+      snowFall(x, lipY, band.top);
+      await wait(200);
+      sound.hiss();
+      steamPuff(x, (band.top + band.bottom) / 2);
+      if (molten) await tween(480, (k) => { molten.heat[i] = 1 - k; });
+      sp.classList.add('is-cast');
+      if (molten) await tween(260, (k) => { molten.alpha[i] = 1 - k; });
+      resolve();
+    }, when);
   }));
-  return Promise.all(placed).then(() => wait(260));
+  await Promise.all(cooled);
+  molten?.destroy();
+  await wait(200);
 }
 
 // ---------- Le staffy noir de la maison : il vient vérifier le prénom et le valide d'un coup de patte ----------
