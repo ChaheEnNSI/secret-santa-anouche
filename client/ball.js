@@ -14,7 +14,20 @@ const TAU = Math.PI * 2;
 const rnd = (a, b) => a + Math.random() * (b - a);
 
 // ---------- Textures peintes ----------
-function paintBauble(size = 2048) {
+// Une teinte par participant (dans l'ordre de la liste).
+const PALETTES = [
+  ['#9c0c22', '#c0112b', '#8f0a1f'], // rouge
+  ['#05402a', '#0b7d4c', '#053524'], // émeraude
+  ['#0a1f5c', '#1b42ad', '#081a4d'], // bleu nuit
+  ['#0b0b10', '#1d1d28', '#08080c'], // onyx
+  ['#7a0f45', '#b81d6a', '#6a0c3b'], // framboise
+  ['#7a2c06', '#c4530f', '#6a2505'], // cuivre
+  ['#064a52', '#0d8c95', '#053d44'], // turquoise
+  ['#3d0f52', '#6c1c8c', '#330c45'], // prune
+  ['#cfcabd', '#f1ede4', '#c5bfb1'], // argent
+  ['#2a5d7a', '#5ca6cd', '#234f69'], // glacier
+];
+function paintBauble(size = 2048, pal = PALETTES[0], label = '') {
   const W = size, H = size / 2;
   const mk = () => { const c = document.createElement('canvas'); c.width = W; c.height = H; return c; };
   const colorC = mk(), roughC = mk();
@@ -32,7 +45,7 @@ function paintBauble(size = 2048) {
   nctx.putImageData(nd, 0, 0);
 
   const red = col.createLinearGradient(0, 0, 0, H);
-  red.addColorStop(0, '#9c0c22'); red.addColorStop(0.5, '#c0112b'); red.addColorStop(1, '#8f0a1f');
+  red.addColorStop(0, pal[0]); red.addColorStop(0.5, pal[1]); red.addColorStop(1, pal[2]);
   col.fillStyle = red; col.fillRect(0, 0, W, H);
   rgh.fillStyle = 'rgb(20,20,20)'; rgh.fillRect(0, 0, W, H);
 
@@ -52,6 +65,7 @@ function paintBauble(size = 2048) {
   const cells = 12, cw = W / cells;
   for (let i = 0; i < cells; i++) {
     const cx = (i + 0.5) * cw, cy = H / 2;
+    if (label && i % 6 !== 0 && i % 6 !== 5) continue; // place réservée au prénom
     if (i % 2 === 0) {
       // flocon à six branches
       both((c) => {
@@ -80,6 +94,20 @@ function paintBauble(size = 2048) {
         c.restore();
       });
     }
+  }
+  // le prénom, peint en or pailleté sur deux côtés de la boule
+  if (label) {
+    both((c) => {
+      c.save();
+      c.textAlign = 'center'; c.textBaseline = 'middle';
+      let fs = 170 * s;
+      c.font = `italic 600 ${fs}px Fraunces, Georgia, serif`;
+      const w = c.measureText(label).width;
+      if (w > 610 * s) { fs *= (610 * s) / w; c.font = `italic 600 ${fs}px Fraunces, Georgia, serif`; }
+      c.fillText(label, 0.25 * W, H / 2 + 6 * s);
+      c.fillText(label, 0.75 * W, H / 2 + 6 * s);
+      c.restore();
+    });
   }
   // guirlandes de perles au-dessus et en dessous du bandeau
   for (let x = 0; x < W; x += 23 * s) {
@@ -382,6 +410,7 @@ export function createBall({ canvas, anchor }) {
   const aniso = Math.min(8, renderer.capabilities.getMaxAnisotropy());
   const map = new CanvasTexture(colorC); map.colorSpace = SRGBColorSpace; map.wrapS = RepeatWrapping; map.anisotropy = aniso;
   const rough = new CanvasTexture(roughC); rough.wrapS = RepeatWrapping; rough.anisotropy = aniso;
+  let toneKey = '0|';
   const seeds = scatterSeeds(NS);
   const uniforms = {
     uSeeds: { value: seeds },
@@ -491,11 +520,12 @@ export function createBall({ canvas, anchor }) {
   window.addEventListener('resize', () => { if (S.visible) layout(); });
 
   function resetState() {
-    Object.assign(S, { thz: -0.42, thzV: 0, thx: 0.1, thxV: 0, spin: rnd(0, TAU), spinV: 0.35, dragging: false, tapT: -10, charge: 0, glow: 0, shaking: false, impacts: [], shattered: false, shatterT: 0, shake: 0 });
+    Object.assign(S, { thz: -0.42, thzV: 0, thx: 0.1, thxV: 0, spin: -0.9, spinV: 0.35, dragging: false, tapT: -10, charge: 0, glow: 0, shaking: false, impacts: [], shattered: false, shatterT: 0, shake: 0 });
     S.kick.set(0, 0, 0);
     uniforms.uImpacts.value.forEach((v) => v.set(0, 1, 0, 0));
     uniforms.uCharge.value = 0;
     S.seen = false;
+    camera.rotation.set(0, 0, 0);
     pivot.visible = false; ballMesh.visible = true;
     shards.forEach((s) => { s.mesh.visible = false; });
     dust.clear();
@@ -541,7 +571,7 @@ export function createBall({ canvas, anchor }) {
     let dt = realDt;
     if (S.shattered) {
       const e = S.shatterT;
-      const k = e < 0.1 ? 0.07 : 0.07 + 0.93 * Math.min(1, ((e - 0.1) / 0.75) ** 2);
+      const k = e < 0.17 ? 1 : e < 1.0 ? 0.04 : Math.min(1, 0.04 + ((e - 1.0) / 0.4) ** 2);
       dt = realDt * k;
       S.shatterT += realDt;
     }
@@ -598,13 +628,22 @@ export function createBall({ canvas, anchor }) {
         if (s.mesh.position.y < camBottom || s.mesh.position.z > S.camZ - 0.6) s.mesh.visible = false; else flying++;
       });
       uniforms.uGlow.value = Math.max(0, 2.2 - e * 2.4);
-      core.material.opacity = Math.max(0, 1 - e / 0.55);
+      core.material.opacity = Math.max(0, 1 - e / 0.3);
       core.scale.setScalar(3 + e * 16);
       wave.material.opacity = Math.max(0, 0.8 - e / 0.45);
       wave.scale.setScalar(2 + (1 - Math.exp(-e * 7)) * 9);
       halo.material.opacity = Math.max(0, 0.6 - e * 0.5);
-      S.shake = Math.max(0, 0.22 - e) * 0.9;
-      camera.position.set(rnd(-S.shake, S.shake), rnd(-S.shake, S.shake), S.camZ);
+      S.shake = Math.max(0, 0.2 - e) * 0.7;
+      const u = Math.min(1, Math.max(0, (e - 0.12) / 1.25));
+      const sw = Math.sin(Math.PI * u * u * (3 - 2 * u));
+      const o = 0.62 * sw * S.orbitDir, zoom = 1 - 0.17 * sw;
+      const rx = -S.c.x * zoom, rz = (S.camZ - S.c.z) * zoom;
+      camera.position.set(
+        S.c.x + rx * Math.cos(o) + rz * Math.sin(o) + rnd(-S.shake, S.shake),
+        S.c.y * (1 - zoom) + rnd(-S.shake, S.shake),
+        S.c.z - rx * Math.sin(o) + rz * Math.cos(o),
+      );
+      camera.rotation.set(0, o, 0);
       S.flying = flying;
     }
     S.alive = dust.update(dt, S.t);
@@ -629,6 +668,16 @@ export function createBall({ canvas, anchor }) {
   return {
     start, stop,
     reset() { resetState(); layout(); },
+    // Boule personnelle : teinte selon la personne, prénom peint dessus.
+    setTone(i, label = '') {
+      const key = `${i}|${label}`;
+      if (key === toneKey) return;
+      toneKey = key;
+      const n = PALETTES.length;
+      const p = paintBauble(2048, PALETTES[((i % n) + n) % n], label);
+      map.image = p.colorC; rough.image = p.roughC;
+      map.needsUpdate = true; rough.needsUpdate = true;
+    },
     set holdRender(v) { S.holdRender = v; }, // pour filmer image par image
     // Pour les essais : avance la simulation sans attendre l'horloge, puis dessine une image.
     advance(seconds) { for (let t = 0; t < seconds; t += 1 / 60) step(1 / 60); renderer.render(scene, camera); },
@@ -707,6 +756,7 @@ export function createBall({ canvas, anchor }) {
         });
       }
       core.position.copy(center); wave.position.copy(center);
+      S.c = center.clone(); S.orbitDir = Math.random() < 0.5 ? -1 : 1;
       S.shattered = true; S.shatterT = 0; S.flying = shards.length;
     },
     center() { ballCenter(); return toScreen(center); },

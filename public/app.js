@@ -499,12 +499,13 @@ function ballAnchor() {
 }
 function loadBall() {
   if (reduceMotion) return Promise.resolve(null);
-  ballLoading ||= import('./ball.js')
+  ballLoading ||= Promise.resolve(document.fonts?.load('italic 600 100px Fraunces')).catch(() => null).then(() => import('./ball.js'))
     .then((m) => { ball = m.createBall({ canvas: glCanvas, anchor: ballAnchor }); return ball; })
     .catch(() => null);
   return ballLoading;
 }
 const ballMode = () => !!ball && gift.classList.contains('is-gl');
+const isPhone = !!window.matchMedia?.('(pointer: coarse)').matches;
 window.__santa = { get ball() { return ball; } }; // pour les essais automatiques
 // Lutin têtu installé sur le couvercle : c'est lui qui empêche le cadeau de s'ouvrir.
 let sitter = null;
@@ -716,8 +717,12 @@ function resetGift() {
   gift.setAttribute('aria-label', ball ? 'Briser la boule de Noël' : 'Ouvrir le cadeau');
   $('#gift-title').textContent = ball ? 'Ton tirage est à l\'intérieur' : 'Ton cadeau t\'attend';
   $('#gift-hint').hidden = false;
-  $('#gift-hint').textContent = ball ? 'Fais-la tourner du doigt, puis tape dessus pour la briser.' : 'Fais-le tourner du doigt, puis touche-le pour l\'ouvrir.';
-  if (ball) { ball.reset(); ball.start(); }
+  $('#gift-hint').textContent = ball ? (isPhone ? 'Elle est à ton nom. Tape dessus ou secoue ton téléphone pour la briser.' : 'Elle est à ton nom. Fais-la tourner, puis tape dessus pour la briser.') : 'Fais-le tourner du doigt, puis touche-le pour l\'ouvrir.';
+  if (ball) {
+    const me = store.get('name') || state.selected || '';
+    ball.setTone(Math.max(0, state.people.findIndex((q) => q.name === me)), me);
+    ball.reset(); ball.start();
+  }
   Object.assign(spin, { ry: -28, vel: 0, shaking: false, taps: 0, needed: 5 + Math.floor(Math.random() * 4), tapAt: -9999, lift: 0, charge: 0, prefetch: null });
   renderTapDots();
   placeSitter();
@@ -777,7 +782,7 @@ async function openGift() {
     navigator.vibrate?.([30, 40, 80]);
     ball.shatter();
     overlay.sparkle(c.x, c.y, 50, 120);
-    await wait(1250);
+    await wait(1750);
   } else {
     // 1. Le lutin est éjecté, le couvercle s'envole, la lumière jaillit.
     launchSitter();
@@ -1008,6 +1013,31 @@ document.addEventListener('click', (e) => {
 // ---------- Démarrage ----------
 startSnow($('#snow'));
 try { history.replaceState({ screen: 'home' }, ''); } catch { /* cadre restreint */ }
+
+// ---------- Capteurs du téléphone : secouer pour frapper la boule, pencher pour faire bouger le décor ----------
+function enableMotion() {
+  [window.DeviceMotionEvent, window.DeviceOrientationEvent].forEach((E) => {
+    try { if (typeof E?.requestPermission === 'function') E.requestPermission().catch(() => {}); } catch { /* ignoré */ }
+  });
+}
+$('#enter-btn').addEventListener('click', enableMotion);
+$('#me-btn').addEventListener('click', enableMotion);
+let lastShake = 0;
+window.addEventListener('devicemotion', (e) => {
+  const a = e.acceleration;
+  let m = 0;
+  if (a && a.x != null) m = Math.hypot(a.x, a.y, a.z);
+  else { const g = e.accelerationIncludingGravity; if (g && g.x != null) m = Math.abs(Math.hypot(g.x, g.y, g.z) - 9.81); }
+  const now = performance.now();
+  if (m < 13 || now - lastShake < 380) return;
+  if (current !== 'gift' || !ballMode() || gift.hidden || state.opening || gift.classList.contains('is-open')) return;
+  lastShake = now;
+  tapGift();
+});
+window.addEventListener('deviceorientation', (e) => {
+  if (e.gamma == null || reduceMotion) return;
+  document.documentElement.style.setProperty('--px', Math.max(-1, Math.min(1, e.gamma / 25)).toFixed(3));
+}, { passive: true });
 
 // ---------- Lutin espion qui passe la tête au bord de l'écran ----------
 const peek = { timer: 0, el: null, caught: 0 };

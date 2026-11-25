@@ -20,7 +20,7 @@ with sync_playwright() as p:
     pg.wait_for_function('window.__santa.ball && document.querySelector("#gift").classList.contains("is-gl")', timeout=30000)
     adv = lambda s: pg.evaluate(f'window.__santa.ball.advance({s})')
     adv(0.45); pg.screenshot(path=f'{OUT}/1-arrivee.png')
-    adv(5); time.sleep(0.3); pg.screenshot(path=f'{OUT}/2-boule.png')
+    adv(2.15); time.sleep(0.3); pg.screenshot(path=f'{OUT}/2-boule.png')
     gb = pg.locator('#gift').bounding_box()
     cx, cy = gb['x'] + gb['width'] / 2, gb['y'] + 178
     pts = [(-30, -20), (40, 30), (-50, 40), (20, -50), (55, -10), (-10, 60), (0, 0), (30, 30), (-30, 10)]
