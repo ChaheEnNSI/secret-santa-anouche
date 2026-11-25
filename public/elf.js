@@ -32,12 +32,15 @@ export function elfSVG(variant = 0) {
     <path d="M19 30.6L14.8 28.5L17.7 33ZM41 30.6L45.2 28.5L42.3 33Z" fill="#e9a98a"/>
     <circle cx="30" cy="31.6" r="10.6" fill="url(#${id}f)"/>
     <path d="M21.4 27.4Q25 23 31 25.2Q26.6 25.8 24.2 29.4Z" fill="#b9652a"/>
-    <path d="M23.9 28.4q2.1-1.5 4.3-.4M31.8 28q2.2-1.1 4.3.4" stroke="#8a4a1c" stroke-width="1" fill="none" stroke-linecap="round"/>
+    <g class="brows"><path class="brow brow-l" d="M23.6 28.7q2.4-1.3 4.8-.2" stroke="#8a4a1c" stroke-width="1.05" fill="none" stroke-linecap="round"/><path class="brow brow-r" d="M31.6 28.5q2.4-1.1 4.8.2" stroke="#8a4a1c" stroke-width="1.05" fill="none" stroke-linecap="round"/></g>
+    <g class="eyes-joy" stroke="#2a1a10" stroke-width="1.35" fill="none" stroke-linecap="round"><path d="M24.4 32.6q1.8-2.2 3.6 0"/><path d="M32 32.6q1.8-2.2 3.6 0"/></g>
     <g class="eyes"><g class="eye"><ellipse cx="26.2" cy="32" rx="1.75" ry="2.25" fill="#2a1a10"/><circle cx="26.8" cy="31.1" r="0.65" fill="#fff"/></g><g class="eye"><ellipse cx="33.8" cy="32" rx="1.75" ry="2.25" fill="#2a1a10"/><circle cx="34.4" cy="31.1" r="0.65" fill="#fff"/></g></g>
     <circle cx="22.9" cy="35.7" r="2.1" fill="rgba(233,110,110,0.5)"/><circle cx="37.1" cy="35.7" r="2.1" fill="rgba(233,110,110,0.5)"/>
     <ellipse class="nose" cx="30" cy="34.6" rx="1.7" ry="1.4" fill="#eaa07e"/>
     <g class="mouth mouth-smile"><path d="M26.4 37q3.6 3.8 7.2 0z" fill="#7a2f22"/><path d="M28.4 38.7q1.6.9 3.2 0-.5-.8-1.6-.8t-1.6.8z" fill="#e8798b"/></g>
     <ellipse class="mouth mouth-o" cx="30" cy="38.4" rx="2" ry="2.5" fill="#5a2418"/>
+    <g class="mouth mouth-joy"><path d="M25.6 36.4q4.4 5.6 8.8 0z" fill="#7a2f22"/><path d="M27.8 38.9q2.2 1.4 4.4 0-.8-1-2.2-1t-2.2 1z" fill="#e8798b"/><path d="M26.2 36.5h7.6" stroke="#fff" stroke-width="1" stroke-linecap="round"/></g>
+    <g class="mouth mouth-grit"><rect x="26.6" y="36.6" width="6.8" height="2.6" rx="1.2" fill="#fff" stroke="#7a2f22" stroke-width="0.8"/><path d="M28.9 36.7v2.4M31.1 36.7v2.4" stroke="#c9b9a8" stroke-width="0.6"/></g>
     <path class="mouth mouth-yuck" d="M26.2 38.4q1.3-1.4 2.6 0t2.6 0 2.4 0" stroke="#7a3b2b" stroke-width="1.1" fill="none" stroke-linecap="round"/>
     <g class="arm arm-pinch"><path d="M36.5 43.5Q47 44 33.6 36.8" stroke="${suit[0]}" stroke-width="4.4" stroke-linecap="round" fill="none"/><circle cx="31.8" cy="35.2" r="3" fill="${skin}"/></g>
     <path d="M19.8 22.6C21.4 11 27.6 5.2 35 6.6C42 8 47.2 12.8 50.8 19.6C44.6 16.6 41.4 18.2 40.4 22.6Z" fill="url(#${id}h)"/>
@@ -48,6 +51,7 @@ export function elfSVG(variant = 0) {
     <g class="elf__bell"><circle cx="51.4" cy="21.2" r="3.1" fill="#e9c46a"/><circle cx="50.4" cy="20.2" r="0.9" fill="#fff6d6"/><path d="M49.7 22.5h3.4" stroke="#8a6421" stroke-width="0.8"/></g>
     <g class="arm arm-up arm-l"><path d="M24 44L15.4 16" stroke="${suit[0]}" stroke-width="4.6" stroke-linecap="round"/><path d="M16.2 18.8L15.5 16.4" stroke="${cream}" stroke-width="5.6" stroke-linecap="round"/><circle cx="15" cy="13.6" r="3.3" fill="${skin}"/></g>
     <g class="arm arm-up arm-r"><path d="M36 44L44.6 16" stroke="${suit[0]}" stroke-width="4.6" stroke-linecap="round"/><path d="M43.8 18.8L44.5 16.4" stroke="${cream}" stroke-width="5.6" stroke-linecap="round"/><circle cx="45" cy="13.6" r="3.3" fill="${skin}"/></g>
+ <g class="sweat"><path d="M41.5 25.5q1.6 2.6 0 3.8q-1.6-1.2 0-3.8z" fill="#bfe3ff"/></g>
     <g class="sniff" stroke="${cream}" stroke-width="1.1" fill="none" stroke-linecap="round"><path d="M19.5 38q-1.8-1.6 0-3.2"/><path d="M16.2 39.1q-3-2.7 0-5.4"/></g>
   </svg>`;
 }
@@ -56,7 +60,7 @@ export function elfSVG(variant = 0) {
 export function elfStandalone(variant = 0) {
   return elfSVG(variant).replace(
     '<svg class="elf__svg" viewBox="0 0 60 70" aria-hidden="true">',
-    '<svg xmlns="http://www.w3.org/2000/svg" width="240" height="280" viewBox="0 0 60 70"><style>.arm-down,.arm-cross,.arm-carry,.arm-pinch,.mouth-smile,.mouth-yuck,.sniff{display:none}</style>',
+    '<svg xmlns="http://www.w3.org/2000/svg" width="240" height="280" viewBox="0 0 60 70"><style>.arm-down,.arm-cross,.arm-carry,.arm-pinch,.mouth-smile,.mouth-yuck,.mouth-joy,.mouth-grit,.eyes-joy,.sweat,.sniff{display:none}</style>',
   );
 }
 

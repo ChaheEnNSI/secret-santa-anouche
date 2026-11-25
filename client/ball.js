@@ -5,6 +5,7 @@ import {
   Color, Vector3, Vector4, BufferGeometry, BufferAttribute, Points, ShaderMaterial, AdditiveBlending,
   DoubleSide, BackSide, SRGBColorSpace, ACESFilmicToneMapping, CylinderGeometry, TorusGeometry,
   LatheGeometry, PlaneGeometry, Vector2, Sprite, SpriteMaterial, RepeatWrapping, Ray, Sphere, Quaternion, Euler,
+  LineSegments, LineBasicMaterial,
 } from 'three';
 
 const NS = 64;        // nombre de morceaux (et de cellules de fissures)
@@ -269,7 +270,8 @@ function scatterSeeds(n) {
 }
 
 // Découpe la sphère en morceaux : chaque triangle rejoint la graine la plus proche.
-function buildShards(seeds, material) {
+function buildShards(seeds, material, edgeMaterial) {
+  const THICK = 0.965; // rayon de la face intérieure : le verre a une épaisseur
   const ico = new IcosahedronGeometry(1, 26);
   const p = ico.attributes.position;
   const buckets = seeds.map(() => []);
@@ -289,7 +291,21 @@ function buildShards(seeds, material) {
     verts.forEach((v) => center.add(v));
     center.multiplyScalar(1 / verts.length);
     const n = verts.length;
-    const pos = new Float32Array(n * 3), nor = new Float32Array(n * 3), obj = new Float32Array(n * 3), uv = new Float32Array(n * 2);
+    // bords libres de l'éclat (arêtes qui n'appartiennent qu'à un seul triangle)
+    const key = (v) => `${v.x.toFixed(4)},${v.y.toFixed(4)},${v.z.toFixed(4)}`;
+    const edges = new Map();
+    for (let i = 0; i < n; i += 3) {
+      for (let k = 0; k < 3; k++) {
+        const v0 = verts[i + k], v1 = verts[i + ((k + 1) % 3)];
+        const k0 = key(v0), k1 = key(v1);
+        const id = k0 < k1 ? `${k0}|${k1}` : `${k1}|${k0}`;
+        const e = edges.get(id);
+        if (e) e.count++; else edges.set(id, { count: 1, a: v0, b: v1 });
+      }
+    }
+    const rim = [...edges.values()].filter((e) => e.count === 1);
+    const total = n * 2 + rim.length * 6;
+    const pos = new Float32Array(total * 3), nor = new Float32Array(total * 3), obj = new Float32Array(total * 3), uv = new Float32Array(total * 2);
     for (let i = 0; i < n; i += 3) {
       const us = [];
       for (let k = 0; k < 3; k++) {
@@ -304,12 +320,38 @@ function buildShards(seeds, material) {
       const wrap = Math.max(...us) - Math.min(...us) > 0.5;
       for (let k = 0; k < 3; k++) uv[(i + k) * 2] = wrap && us[k] < 0.5 ? us[k] + 1 : us[k];
     }
+    // face intérieure (vue de l'intérieur, elle apparaît argentée comme une vraie boule)
+    for (let i = 0; i < n; i++) {
+      const v = verts[i], j = n + i;
+      pos.set([v.x * THICK - center.x, v.y * THICK - center.y, v.z * THICK - center.z], j * 3);
+      nor.set([v.x, v.y, v.z], j * 3);
+      obj.set([v.x, v.y, v.z], j * 3);
+      uv[j * 2] = uv[i * 2]; uv[j * 2 + 1] = uv[i * 2 + 1];
+    }
+    // tranches : un ruban de verre entre la face extérieure et la face intérieure
+    let j = n * 2;
+    const nn = new Vector3(), mid = new Vector3();
+    rim.forEach(({ a: va, b: vb }) => {
+      const ai = va.clone().multiplyScalar(THICK), bi = vb.clone().multiplyScalar(THICK);
+      mid.copy(va).add(vb).multiplyScalar(0.5);
+      nn.copy(vb).sub(va).cross(mid).normalize();
+      if (nn.dot(mid.clone().sub(center)) < 0) nn.negate();
+      [va, vb, ai, vb, bi, ai].forEach((v) => {
+        pos.set([v.x - center.x, v.y - center.y, v.z - center.z], j * 3);
+        nor.set([nn.x, nn.y, nn.z], j * 3);
+        obj.set([mid.x, mid.y, mid.z], j * 3);
+        uv[j * 2] = 0.5; uv[j * 2 + 1] = 0.5;
+        j++;
+      });
+    });
     const g = new BufferGeometry();
+    g.addGroup(0, n * 2, 0);
+    g.addGroup(n * 2, rim.length * 6, 1);
     g.setAttribute('position', new BufferAttribute(pos, 3));
     g.setAttribute('normal', new BufferAttribute(nor, 3));
     g.setAttribute('aObj', new BufferAttribute(obj, 3));
     g.setAttribute('uv', new BufferAttribute(uv, 2));
-    const mesh = new Mesh(g, material);
+    const mesh = new Mesh(g, [material, edgeMaterial]);
     mesh.visible = false;
     mesh.frustumCulled = false;
     shards.push({ mesh, center, vel: new Vector3(), axis: new Vector3(), spin: 0, size: Math.sqrt(n) * 0.55 });
@@ -472,7 +514,8 @@ export function createBall({ canvas, anchor, sound = {} }) {
   const fwHeads = makeDust(1800);     // étincelles principales : jamais écrasées par leurs traînées
   fwHeads.mat.depthTest = false;
   scene.add(fwHeads.points);
-  const shards = buildShards(seeds, glass);
+  const edgeGlass = new MeshStandardMaterial({ color: 0xe6fff4, metalness: 0.15, roughness: 0.06, emissive: 0x9cc7b4, emissiveIntensity: 0.45, envMapIntensity: 2.2, side: DoubleSide });
+  const shards = buildShards(seeds, glass, edgeGlass);
   shards.forEach((s) => scene.add(s.mesh));
 
   // ---------- Les lutins cachés dans la boule : projetés à l'éclatement, chacun avec une lettre ----------
@@ -558,7 +601,7 @@ export function createBall({ canvas, anchor, sound = {} }) {
   window.addEventListener('resize', () => { if (S.visible) layout(); });
 
   function resetState() {
-    Object.assign(S, { thz: -0.42, thzV: 0, thx: 0.1, thxV: 0, spin: -0.9, spinV: 0.35, dragging: false, tapT: -10, charge: 0, glow: 0, shaking: false, impacts: [], shattered: false, shatterT: 0, shake: 0 });
+    Object.assign(S, { thz: -0.09, thzV: 0, thx: 0.04, thxV: 0, spin: -0.9, spinV: 0.35, dragging: false, tapT: -10, charge: 0, glow: 0, shaking: false, impacts: [], shattered: false, shatterT: 0, shake: 0 });
     S.kick.set(0, 0, 0);
     uniforms.uImpacts.value.forEach((v) => v.set(0, 1, 0, 0));
     uniforms.uCharge.value = 0;
@@ -568,6 +611,12 @@ export function createBall({ canvas, anchor, sound = {} }) {
     shards.forEach((s) => { s.mesh.visible = false; });
     FW.on = false; FW.heads = []; FW.rockets = []; fw.clear(); fwHeads.clear(); canvas.style.zIndex = '';
     clearName();
+    capFly.on = false;
+    spinG.add(cap); spinG.add(ring);
+    cap.position.set(0, 0, 0); cap.rotation.set(0, 0, 0); cap.scale.set(1, 1, 1);
+    ring.position.set(0, 1.25, 0); ring.rotation.set(0, 0, 0); ring.scale.set(1, 1, 1);
+    streaks.visible = false; SP.forEach((q) => { q.life = 0; });
+    rays.material.opacity = 0; flare.material.opacity = 0;
     crew.forEach((c) => { c.sprite.visible = false; });
     dust.clear();
     motes.forEach((m) => { m.q.fixed = true; m.q.life = 1; });
@@ -607,6 +656,78 @@ export function createBall({ canvas, anchor, sound = {} }) {
     if (!S.holdRender) renderer.render(scene, camera);
     if (!FW.on && !NAME.active && S.shattered && S.shatterT > 1.2 && !S.flying && S.alive === 0) stop();
   }
+
+  // ---------- Étincelles en traînées (figées pendant le ralenti), rayons et reflet d'objectif ----------
+  const NSTREAK = 260;
+  const streakGeo = new BufferGeometry();
+  const sPos = new Float32Array(NSTREAK * 6), sCol = new Float32Array(NSTREAK * 6);
+  streakGeo.setAttribute('position', new BufferAttribute(sPos, 3));
+  streakGeo.setAttribute('color', new BufferAttribute(sCol, 3));
+  const streaks = new LineSegments(streakGeo, new LineBasicMaterial({ vertexColors: true, transparent: true, blending: AdditiveBlending, depthWrite: false, toneMapped: false }));
+  streaks.frustumCulled = false;
+  streaks.visible = false;
+  scene.add(streaks);
+  const SP = Array.from({ length: NSTREAK }, () => ({ p: new Vector3(), v: new Vector3(), life: 0, max: 1, warm: 1 }));
+  function launchStreaks(from, bias) {
+    SP.forEach((q) => {
+      q.p.copy(from).add(tmp2.randomDirection().multiplyScalar(0.25));
+      q.v.copy(tmp2.randomDirection()).multiplyScalar(rnd(5, 15)).addScaledVector(bias, rnd(0, 3));
+      q.max = q.life = rnd(0.7, 1.5);
+      q.warm = Math.random();
+    });
+    streaks.visible = true;
+  }
+  function stepStreaks(dt) {
+    if (!streaks.visible) return;
+    let alive = 0;
+    SP.forEach((q, i) => {
+      if (q.life > 0) {
+        q.life -= dt;
+        q.v.multiplyScalar(Math.exp(-2.4 * dt));
+        q.v.y -= 6 * dt;
+        q.p.addScaledVector(q.v, dt);
+        alive++;
+      }
+      const f = Math.max(0, q.life / q.max);
+      const len = 0.045;
+      sPos.set([q.p.x, q.p.y, q.p.z, q.p.x - q.v.x * len, q.p.y - q.v.y * len, q.p.z - q.v.z * len], i * 6);
+      const r = 1.3 * f, g = (0.85 + 0.15 * q.warm) * f, b = (0.45 + 0.5 * q.warm) * f;
+      sCol.set([r, g, b, r * 0.15, g * 0.12, b * 0.1], i * 6);
+    });
+    streakGeo.attributes.position.needsUpdate = true;
+    streakGeo.attributes.color.needsUpdate = true;
+    if (!alive) streaks.visible = false;
+  }
+  const raysCanvas = document.createElement('canvas');
+  raysCanvas.width = raysCanvas.height = 512;
+  {
+    const rc = raysCanvas.getContext('2d');
+    rc.translate(256, 256);
+    for (let i = 0; i < 28; i++) {
+      rc.rotate(TAU / 28 + rnd(-0.05, 0.05));
+      const len = rnd(140, 256), w = rnd(3, 11);
+      const g = rc.createLinearGradient(0, 0, 0, -len);
+      g.addColorStop(0, 'rgba(255,236,190,0.9)'); g.addColorStop(1, 'rgba(255,220,150,0)');
+      rc.fillStyle = g;
+      rc.beginPath(); rc.moveTo(-w, 0); rc.lineTo(0, -len); rc.lineTo(w, 0); rc.fill();
+    }
+  }
+  const raysTex = new CanvasTexture(raysCanvas); raysTex.colorSpace = SRGBColorSpace;
+  const rays = new Sprite(new SpriteMaterial({ map: raysTex, blending: AdditiveBlending, depthWrite: false, depthTest: false, transparent: true, toneMapped: false, opacity: 0 }));
+  const flareCanvas = document.createElement('canvas');
+  flareCanvas.width = 512; flareCanvas.height = 64;
+  {
+    const fc = flareCanvas.getContext('2d');
+    const g = fc.createLinearGradient(0, 0, 512, 0);
+    g.addColorStop(0, 'rgba(160,200,255,0)'); g.addColorStop(0.42, 'rgba(200,225,255,0.55)'); g.addColorStop(0.5, 'rgba(255,255,255,1)'); g.addColorStop(0.58, 'rgba(200,225,255,0.55)'); g.addColorStop(1, 'rgba(160,200,255,0)');
+    fc.fillStyle = g;
+    for (let y = 0; y < 64; y++) { fc.globalAlpha = Math.exp(-(((y - 32) / 9) ** 2)); fc.fillRect(0, y, 512, 1); }
+  }
+  const flareTex = new CanvasTexture(flareCanvas); flareTex.colorSpace = SRGBColorSpace;
+  const flare = new Sprite(new SpriteMaterial({ map: flareTex, blending: AdditiveBlending, depthWrite: false, depthTest: false, transparent: true, toneMapped: false, opacity: 0 }));
+  scene.add(rays, flare);
+  // le capuchon doré et son anneau sautent en tournoyant
+  const capFly = { on: false, v: new Vector3(), w: new Vector3(), vr: new Vector3(), wr: new Vector3() };
 
   // ---------- Le prénom en éclats de verre doré : une anamorphose ----------
   // Le prénom est peint en or sur une plaque de verre cachée dans la boule. À l'éclatement, la plaque se brise
@@ -934,7 +1055,7 @@ export function createBall({ canvas, anchor, sound = {} }) {
       follow();
       pivot.visible = !!S.seen;
       // Pendule amorti, bousculé par les coups.
-      const w2 = 10.5, damp = 1.25;
+      const w2 = 10.5, damp = 1.7;
       S.thzV += (-w2 * S.thz - damp * S.thzV + Math.sin(S.t * 0.7) * 0.03) * realDt;
       S.thxV += (-w2 * S.thx - damp * S.thxV) * realDt;
       S.thz += S.thzV * realDt; S.thx += S.thxV * realDt;
@@ -1005,6 +1126,20 @@ export function createBall({ canvas, anchor, sound = {} }) {
       camera.rotation.set(0, o, 0);
       S.flying = flying;
       nameStep(realDt);
+      stepStreaks(dt);
+      if (capFly.on) {
+        capFly.v.y -= 11 * dt; capFly.vr.y -= 11 * dt;
+        cap.position.addScaledVector(capFly.v, dt); ring.position.addScaledVector(capFly.vr, dt);
+        cap.rotation.x += capFly.w.x * dt; cap.rotation.y += capFly.w.y * dt; cap.rotation.z += capFly.w.z * dt;
+        ring.rotation.x += capFly.wr.x * dt; ring.rotation.y += capFly.wr.y * dt; ring.rotation.z += capFly.wr.z * dt;
+        if (cap.position.y < camBottom && ring.position.y < camBottom) capFly.on = false; else flying++;
+        S.flying = flying;
+      }
+      rays.material.opacity = Math.max(0, 1 - e / 0.7) * 0.9;
+      rays.scale.setScalar(2.5 + (1 - Math.exp(-e * 4)) * 7);
+      rays.material.rotation = e * 0.25;
+      flare.material.opacity = Math.max(0, 1 - e / 0.45);
+      flare.scale.set(3 + e * 22, 0.55 + e * 0.6, 1);
     }
     S.alive = dust.update(dt, S.t);
   }
@@ -1161,6 +1296,15 @@ export function createBall({ canvas, anchor, sound = {} }) {
         c.sprite.material.rotation = rnd(-0.55, 0.55);
         c.spin = rnd(-3.5, 3.5);
       });
+      // capuchon et anneau : ils quittent la boule et sautent vers le haut en tournoyant
+      scene.attach(cap); scene.attach(ring);
+      capFly.on = true;
+      capFly.v.set(rnd(-1.2, 1.2), rnd(4.5, 6), rnd(0.5, 2));
+      capFly.w.set(rnd(-9, 9), rnd(-4, 4), rnd(-9, 9));
+      capFly.vr.set(capFly.v.x + rnd(-1.5, 1.5), capFly.v.y + rnd(0.5, 2), capFly.v.z + rnd(0, 1));
+      capFly.wr.set(rnd(-14, 14), rnd(-6, 6), rnd(-14, 14));
+      launchStreaks(center, lastHit);
+      rays.position.copy(center); flare.position.copy(center);
       pivot.visible = false;
       motes.forEach((m) => { m.q.fixed = false; m.q.life = rnd(0.6, 1.6); m.q.max = m.q.life; m.q.vx = rnd(-2, 2); m.q.vy = rnd(0, 3); m.q.vz = rnd(-2, 2); });
       for (let i = 0; i < 520; i++) {

@@ -1017,3 +1017,51 @@ button { cursor: pointer; }
 /* Le doigt qui balaie la neige ne doit pas sélectionner le texte */
 body { -webkit-user-select: none; user-select: none; -webkit-touch-callout: none; }
 input, textarea { -webkit-user-select: text; user-select: text; }
+
+/* =========================================================
+   Lutins : expressions et poses supplémentaires
+   ========================================================= */
+.elf__svg .eyes-joy, .elf__svg .mouth-joy, .elf__svg .mouth-grit, .elf__svg .sweat { display: none; }
+.elf__svg .brow { transform-box: fill-box; transform-origin: 50% 50%; transition: transform 0.15s; }
+.elf.is-joy .eyes, .elf.is-effort .mouth-smile, .elf.is-joy .mouth-smile, .elf.is-joy .mouth-o, .elf.is-effort .mouth-o { display: none; }
+.elf.is-joy .eyes-joy, .elf.is-joy .mouth-joy { display: inline; }
+.elf.is-joy .brow { transform: translateY(-0.8px); }
+.elf.is-effort .mouth-grit, .elf.is-effort .sweat { display: inline; }
+.elf.is-effort .eyes { animation: none; transform: scaleY(0.45); }
+.elf.is-effort .brow-l { transform: rotate(14deg) translateY(0.6px); }
+.elf.is-effort .brow-r { transform: rotate(-14deg) translateY(0.6px); }
+.elf.is-effort .sweat { animation: sweat 0.7s ease-in infinite; }
+@keyframes sweat { 0% { transform: translate(0, 0); opacity: 1; } 100% { transform: translate(1.5px, 6px); opacity: 0; } }
+.elf.is-shocked .brow { transform: translateY(-1.4px); }
+/* un bras levé (parapluie, corde, ballons), l'autre le long du corps */
+.elf.pose-one-up .arm-up.arm-l { display: none; }
+.elf.pose-one-up .arm-down.arm-l { display: inline; }
+/* marche : le corps rebondit à chaque pas */
+.elf.is-walking .elf__svg { animation: walkbob 0.2s ease-in-out infinite alternate; }
+@keyframes walkbob { from { transform: translateY(0) rotate(-2.5deg); } to { transform: translateY(-3px) rotate(2.5deg); } }
+.elf.is-dangling .leg-l { animation: legl 0.5s ease-in-out infinite alternate; }
+.elf.is-dangling .leg-r { animation: legr 0.5s ease-in-out infinite alternate; }
+
+/* =========================================================
+   Lutins livreurs de lettres
+   ========================================================= */
+.courier { position: absolute; left: 0; top: 0; width: 76px; height: 87px; will-change: transform; pointer-events: none; transform-origin: 50% 0; }
+.courier__elf { position: absolute; left: 0; top: 0; z-index: 2; }
+.courier .tile, .elves > .tile { position: absolute; left: 0; top: 0; width: var(--cw); height: var(--chh); z-index: 3; filter: drop-shadow(0 6px 6px rgba(0, 0, 0, 0.45)); }
+.tile .flap { position: absolute; inset: 0; width: 100%; height: 100%; }
+.tile .flap { box-shadow: 0 0 0 1.5px #b8923f; border-radius: 5px; }
+.courier__string { position: absolute; width: 1.4px; background: rgba(247, 242, 231, 0.85); z-index: 1; }
+.acc { position: absolute; z-index: 1; overflow: visible; filter: drop-shadow(0 4px 4px rgba(0, 0, 0, 0.35)); }
+.acc--umbrella { left: 17px; top: -66px; width: 80px; height: 64px; }
+.acc--balloons { left: 17px; top: -78px; width: 80px; height: 96px; transform-origin: 50px 94px; animation: balloonsway 1.6s ease-in-out infinite alternate; }
+@keyframes balloonsway { from { transform: rotate(-6deg); } to { transform: rotate(6deg); } }
+.rope { position: absolute; top: 0; width: 3px; margin-left: -1.5px; height: 0; z-index: 0; border-radius: 2px; background: repeating-linear-gradient(180deg, #c9a46a 0 5px, #8a6a3a 5px 8px); box-shadow: 0 0 3px rgba(0, 0, 0, 0.4); }
+/* la rangée en construction : pas encore de cadre, juste les cases qui arrivent */
+.board.is-building { background: transparent; box-shadow: none; min-height: calc(var(--chh) + 17px); min-width: 2px; }
+.board.is-building::before, .board.is-building::after { opacity: 0; }
+.board.is-done { animation: boardframe 0.55s cubic-bezier(0.3, 1.4, 0.5, 1); }
+@keyframes boardframe { 0% { transform: scale(0.92); filter: brightness(1.8); } 100% { transform: none; filter: none; } }
+.flap.is-incoming { visibility: hidden; }
+.flap.is-landed { animation: flapland 0.42s ease-out; transform-origin: 50% 100%; }
+@keyframes flapland { 0% { transform: scale(1.12, 0.8); } 45% { transform: scale(0.95, 1.06); } 100% { transform: none; } }
+.flap.is-landed b { animation: flaplock 0.6s ease-out; }

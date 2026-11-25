@@ -381,6 +381,8 @@ async function finishScan() {
     scanner.disabled = true;
     check.classList.add('is-verified');
     setScan(VERDICTS[Math.floor(Math.random() * VERDICTS.length)](state.selected), 'result');
+    // La boule 3D (calcul lourd) se prépare maintenant, pendant qu'on lit le verdict, jamais pendant le scan.
+    setTimeout(loadBall, 650);
     sound.seal();
     snifferMood('yuck');
     stinkLines();
@@ -454,7 +456,6 @@ async function selectName(name, tagEl) {
   state.selected = name;
   if (store.get('token') && store.get('name') === name) { openGiftScreen(); return; }
   if (store.get('token')) { renderMe(); return; }
-  setTimeout(loadBall, 700); // la boule 3D se prépare pendant le contrôle d'identité
   const qName = $('#q-name');
   qName.textContent = name;
   resetCheck(name);
@@ -721,7 +722,7 @@ function resetGift() {
   reveal.classList.remove('is-in', 'is-named', 'is-tilting');
   reveal.querySelector('.pawstamp')?.remove();
   reveal.querySelector('.crank')?.remove();
-  elvesBox.querySelectorAll('.dog, .woof, .lino-tag, .cranker').forEach((el) => el.remove());
+  elvesBox.querySelectorAll('.dog, .woof, .lino-tag, .cranker, .courier, .tile, .rope').forEach((el) => el.remove());
   revealName.textContent = '';
   after.hidden = true;
   gift.classList.toggle('is-gl', !!ball);
@@ -799,12 +800,10 @@ async function openGift() {
     flash.classList.add('is-on');
     sound.shatter();
     navigator.vibrate?.([30, 40, 80]);
-    let aligned = null;
-    try { ball.prepareName(data.target); aligned = ball.shatter(); } catch { aligned = null; }
-    if (!aligned) ball.shatter();
+    ball.shatter();
     overlay.sparkle(c.x, c.y, 50, 120);
     $('#gift-hint').textContent = '';
-    await Promise.race([aligned || wait(1500), wait(2800)]);
+    await wait(1450);
   } else {
     // 1. Le lutin est éjecté, le couvercle s'envole, la lumière jaillit.
     launchSitter();
@@ -820,31 +819,16 @@ async function openGift() {
     await wait(450);
   }
 
-  if (anamorph) {
-    // 2. Le prénom en or plane un instant, la carte se redresse derrière lui,
-    //    puis il vole se poser dans le tableau à volets, qui claque lettre par lettre.
-    prepareLetters(data.target, 'land');
-    reveal.hidden = false;
-    gift.hidden = true;
-    requestAnimationFrame(() => { gift.classList.add('is-gone'); reveal.classList.add('is-in'); });
-    $('#gift-title').textContent = 'Et tu as pioché…';
-    await wait(1150);
-    const boardEl = revealName.querySelector('.board');
-    await Promise.race([ball.flyName(layoutRect(boardEl)), wait(1200)]);
-    await landBoard(data.target);
-  } else {
-  // 2. La carte se redresse avec son tableau à volets déjà lancé ; un lutin vient le freiner.
-  const quick = ballMode();
-  prepareLetters(data.target);
+  // 2. La carte se redresse, puis les lutins apportent les lettres une par une.
+  startBoard();
   reveal.hidden = false;
-  if (quick) gift.hidden = true;
-  setTimeout(() => { gift.classList.add('is-gone'); reveal.classList.add('is-in'); }, quick ? 60 : 500);
+  if (anamorph) gift.hidden = true;
+  setTimeout(() => { gift.classList.add('is-gone'); reveal.classList.add('is-in'); }, anamorph ? 30 : 500);
   $('#gift-title').textContent = 'Et tu as pioché…';
-  $('#gift-hint').textContent = 'Le tableau du tirage s\'emballe. Un lutin attrape la manivelle.';
-  await wait(quick ? 200 : 1700);
+  $('#gift-hint').textContent = 'Les lutins apportent les lettres.';
+  await wait(anamorph ? 1050 : 1650);
   gift.hidden = true;
-  await deliverLetters(data.target, quick ? 620 : 0);
-  }
+  await deliverByElves(data.target);
   $('#gift-hint').textContent = 'Lino, le chien de la maison, vient vérifier le prénom.';
   await dogValidate();
   $('#gift-hint').textContent = '';
@@ -1046,6 +1030,214 @@ async function deliverLetters(word, settle = 0) {
     setTimeout(() => crank.remove(), 420);
   }, 320);
   await wait(180);
+}
+
+// ---------- Les lutins livreurs : chaque lettre arrive avec un lutin et une entrée différente ----------
+// Aucune case vide n'est montrée à l'avance : la rangée se construit et se recentre à chaque lettre.
+const UMBRELLA = '<svg class="acc acc--umbrella" viewBox="0 0 80 64" aria-hidden="true"><path d="M40 14V62q0 5-5 5" stroke="#5a3a1c" stroke-width="2.6" fill="none" stroke-linecap="round"/><path d="M2 30Q6 4 40 3Q74 4 78 30Q70 24 62 30Q54 24 46 30Q40 25 40 30Q34 25 30 30Q22 24 14 30Q8 24 2 30Z" fill="#c8243d"/><path d="M40 3Q30 12 30 30M40 3Q50 12 50 30M40 3Q16 10 14 30M40 3Q64 10 62 30" stroke="#f7f2e7" stroke-width="3.4" fill="none"/><circle cx="40" cy="3" r="2.6" fill="#e9c46a"/></svg>';
+const BALLOONS = '<svg class="acc acc--balloons" viewBox="0 0 80 96" aria-hidden="true"><path d="M50 94Q40 70 26 46M50 94Q54 70 58 40" stroke="#f7f2e7" stroke-width="1.1" fill="none"/><ellipse cx="25" cy="27" rx="17" ry="21" fill="#d13a4e"/><ellipse cx="19" cy="19" rx="4" ry="7" fill="rgba(255,255,255,0.45)" transform="rotate(-25 19 19)"/><path d="M22 47l3 4 3-4z" fill="#d13a4e"/><ellipse cx="58" cy="21" rx="16" ry="20" fill="#e9c46a"/><ellipse cx="52" cy="13" rx="4" ry="6.5" fill="rgba(255,255,255,0.5)" transform="rotate(-25 52 13)"/><path d="M55 40l3 4 3-4z" fill="#e9c46a"/></svg>';
+const ENTRANCES = ['walk', 'umbrella', 'rope', 'balloon'];
+function measureCell() {
+  const probe = document.createElement('span');
+  probe.className = 'board';
+  probe.style.cssText = 'position:absolute;visibility:hidden;left:-999px;top:0';
+  probe.innerHTML = flapHTML('A');
+  revealName.append(probe);
+  const f = probe.firstElementChild;
+  const out = { cw: f.offsetWidth, chh: f.offsetHeight };
+  probe.remove();
+  return out;
+}
+function startBoard() {
+  revealName.classList.add('is-board');
+  revealName.innerHTML = '<span class="board is-building" data-drift role="img"></span>';
+  flaps = [];
+  return revealName.firstElementChild;
+}
+// Ajoute une case à la rangée : les cases déjà posées glissent pour laisser la place (le tout reste centré).
+function insertFlap(board, ch) {
+  const holder = document.createElement('span');
+  holder.innerHTML = flapHTML(ch);
+  const el = holder.firstElementChild;
+  el.classList.add('is-incoming');
+  const before = [...board.children].map((c) => [c, c.getBoundingClientRect().left]);
+  board.append(el);
+  before.forEach(([c, x0]) => {
+    const dx = x0 - c.getBoundingClientRect().left;
+    if (Math.abs(dx) > 0.5) c.animate([{ transform: `translateX(${dx}px)` }, { transform: 'none' }], { duration: 300, easing: 'cubic-bezier(0.3, 1.25, 0.5, 1)' });
+  });
+  return el;
+}
+function at(x, y, extra = '') { return { transform: `translate(${x.toFixed(1)}px, ${y.toFixed(1)}px) ${extra}` }; }
+// Trajectoire qui se balance doucement (parapluie, ballons).
+function swayFrames(x0, y0, x1, y1, amp, turns, n = 24) {
+  const f = [];
+  for (let k = 0; k <= n; k++) {
+    const u = k / n, e = u < 1 ? 1 - (1 - u) ** 2 : 1;
+    const sway = Math.sin(u * Math.PI * 2 * turns) * amp * (1 - u);
+    f.push(at(x0 + (x1 - x0) * e + sway, y0 + (y1 - y0) * e, `rotate(${(-sway * 0.35).toFixed(1)}deg)`));
+  }
+  return f;
+}
+
+async function deliverByElves(word) {
+  const letters = [...word.toLocaleUpperCase('fr-FR')].map(esc);
+  const board = startBoard();
+  const { cw, chh } = measureCell();
+  const GAP = 3, EW = 76, EH = 87, DROP = 44;
+  const W = window.innerWidth, H = window.innerHeight;
+  const nameBox = layoutRect(revealName);
+  const cx0 = nameBox.left + nameBox.width / 2;
+  const slotTop = nameBox.top + (nameBox.height - chh) / 2;
+  const cardTop = layoutRect(reveal).top;
+  const STAGGER = 430;
+  // une porte par lettre : la lettre i ne se pose qu'une fois la lettre i - 1 en place, quel que soit l'ordre d'arrivée
+  const gates = letters.map(() => { let open; const p = new Promise((r) => { open = r; }); return { p, open }; });
+
+  const trip = (ch, i) => new Promise((resolve) => {
+    (async () => {
+      await wait(i * STAGGER);
+      const kind = ENTRANCES[i % ENTRANCES.length];
+      const fromLeft = i % 2 === 0;
+      // centre de la case une fois posée (la rangée aura alors i + 1 cases)
+      const X = cx0 + ((i + 1) * cw + i * GAP) / 2 - cw / 2;
+      const group = document.createElement('div');
+      group.className = 'courier';
+
+      const elf = makeElf(i % 2, 'elf--big courier__elf');
+      const tile = document.createElement('div');
+      tile.className = 'tile';
+      tile.style.setProperty('--cw', `${cw}px`);
+      tile.style.setProperty('--chh', `${chh}px`);
+      tile.innerHTML = flapHTML(ch);
+      group.append(elf, tile);
+      elvesBox.append(group);
+      const overhead = kind === 'walk';
+      // position de la tuile dans le groupe : au-dessus de la tête, ou pendue à la main gauche
+      const tx = overhead ? 38 - cw / 2 : 22 - cw / 2;
+      const ty = overhead ? 15 - chh : 92;
+      tile.style.transform = `translate(${tx}px, ${ty}px)`;
+      let string = null, rope = null, acc = null;
+      if (!overhead) {
+        string = document.createElement('i');
+        string.className = 'courier__string';
+        string.style.cssText = 'left:22px;top:73px;height:20px';
+        group.append(string);
+        elf.classList.add('pose-one-up', 'is-dangling');
+      }
+      if (kind === 'umbrella') { group.insertAdjacentHTML('beforeend', UMBRELLA); acc = group.lastElementChild; }
+      if (kind === 'balloon') { group.insertAdjacentHTML('beforeend', BALLOONS); acc = group.lastElementChild; }
+      // point d'arrivée du groupe : la tuile pile au-dessus de sa case
+      let gx, gy;
+      try {
+        if (overhead) {
+          // Il arrive en marchant sur le bord de la carte, la lettre au-dessus de la tête, puis la lance dans sa case.
+          gx = X - 38; gy = cardTop - EH + 5;
+          const sx = fromLeft ? -EW - 40 : W + 40;
+          elf.classList.add('is-walking', 'is-effort');
+          sound.sweep('triangle', 260, 300, 0.05, 0.02);
+          await group.animate([at(sx, gy), at(gx, gy)], { duration: 760, easing: 'cubic-bezier(0.3, 0.1, 0.4, 1)', fill: 'forwards' }).finished;
+          elf.classList.remove('is-walking');
+        } else if (kind === 'umbrella') {
+          gx = X - 22; gy = slotTop - DROP - ty;
+          elf.classList.add('is-joy');
+          sound.sweep('sine', 900, 500, 0.6, 0.02);
+          await group.animate(swayFrames(gx + (fromLeft ? -70 : 70), -EH - 120, gx, gy, 26, 1.5), { duration: 1050, easing: 'linear', fill: 'forwards' }).finished;
+        } else if (kind === 'rope') {
+          gx = X - 22; gy = slotTop - DROP - ty;
+          rope = document.createElement('i');
+          rope.className = 'rope';
+          rope.style.left = `${gx + 57}px`;
+          elvesBox.append(rope);
+          elf.classList.add('is-shocked');
+          sound.sweep('sawtooth', 1400, 300, 0.45, 0.018);
+          const ropeOn = (y) => { rope.style.height = `${Math.max(0, y + 18)}px`; };
+          const y0 = -EH - 60;
+          const anim = group.animate([at(gx, y0), at(gx, gy + 8, 'scaleY(1.04)'), at(gx, gy - 4), at(gx, gy)], { duration: 640, easing: 'cubic-bezier(0.5, 0, 0.6, 1)', fill: 'forwards' });
+          const follow = () => { if (!rope.isConnected) return; const m = new DOMMatrix(getComputedStyle(group).transform); ropeOn(m.f); if (anim.playState === 'running') requestAnimationFrame(follow); else ropeOn(gy); };
+          requestAnimationFrame(follow);
+          await anim.finished;
+          elf.classList.remove('is-shocked');
+          elf.classList.add('is-joy');
+        } else {
+          gx = X - 22; gy = slotTop - DROP - ty;
+          elf.classList.add('is-joy');
+          await group.animate(swayFrames(gx + (fromLeft ? -40 : 40), H + 60, gx, gy, 18, 1.2), { duration: 1150, easing: 'linear', fill: 'forwards' }).finished;
+        }
+      } catch { /* on pose la lettre quand même */ }
+
+      // Les lettres se posent dans l'ordre : on attend que la précédente soit en place.
+      const mine = (i ? gates[i - 1].p : Promise.resolve()).then(async () => {
+        const tileBox = tile.getBoundingClientRect();
+        const flap = insertFlap(board, ch);
+        flaps.push({ el: flap });
+        const target = flap.getBoundingClientRect();
+        // la tuile quitte le lutin et tombe dans sa case
+        elvesBox.append(tile);
+        tile.style.transform = `translate(${tileBox.left}px, ${tileBox.top}px)`;
+        if (overhead) {
+          elf.className = elf.className.replace('is-effort', 'is-joy');
+          elf.classList.add('pose-down');
+        }
+        string?.remove();
+        const dx = target.left - tileBox.left, dy = target.top - tileBox.top;
+        const lift = overhead ? 34 : 0;
+        const frames = [];
+        for (let k = 0; k <= 12; k++) {
+          const u = k / 12, e = u * u;
+          const xx = tileBox.left + dx * (overhead ? u : e * 0 + u);
+          const yy = tileBox.top + dy * (overhead ? u : e) - lift * 4 * u * (1 - u);
+          frames.push({ transform: `translate(${xx.toFixed(1)}px, ${yy.toFixed(1)}px) rotate(${((1 - u) * (fromLeft ? -14 : 14) * (overhead ? 1 : 0.3)).toFixed(1)}deg)` });
+        }
+        await tile.animate(frames, { duration: overhead ? 380 : 230, easing: overhead ? 'cubic-bezier(0.3, 0, 0.7, 1)' : 'linear', fill: 'forwards' }).finished.catch(() => {});
+        flap.classList.remove('is-incoming');
+        flap.classList.add('is-landed');
+        tile.remove();
+        sound.clack(false);
+        sound.note(i + 2);
+        navigator.vibrate?.(10);
+        overlay.sparkle(target.left + target.width / 2, target.top + target.height * 0.6, 10, 22);
+        board.animate([{ translate: '0 0' }, { translate: '0 3px' }, { translate: '0 0' }], { duration: 160 });
+      });
+      await mine.catch(() => {});
+      gates[i].open();
+      resolve();
+
+      // Le lutin repart, chacun à sa façon.
+      try {
+        if (overhead) {
+          await wait(160);
+          elf.className = 'elf elf--big courier__elf is-cheering is-joy';
+          await wait(320);
+          elf.className = 'elf elf--big courier__elf is-walking is-joy';
+          await group.animate(arcFrames(gx, gy, fromLeft ? W + 50 : -EW - 50, gy + 60, 70, 0, fromLeft ? 14 : -14), { duration: 700, easing: 'linear', fill: 'forwards' }).finished;
+        } else if (kind === 'umbrella') {
+          await group.animate(swayFrames(gx, gy, gx + (fromLeft ? 90 : -90), -EH - 220, 20, 1.2), { duration: 1100, easing: 'cubic-bezier(0.5, 0, 0.9, 0.6)', fill: 'forwards' }).finished;
+        } else if (kind === 'rope') {
+          elf.classList.add('is-cheering');
+          const anim = group.animate([at(gx, gy), at(gx, -EH - 80)], { duration: 520, easing: 'cubic-bezier(0.6, 0, 0.9, 0.5)', fill: 'forwards' });
+          sound.sweep('sawtooth', 300, 1500, 0.4, 0.015);
+          const follow = () => { if (!rope.isConnected) return; const m = new DOMMatrix(getComputedStyle(group).transform); rope.style.height = `${Math.max(0, m.f + 18)}px`; if (anim.playState === 'running') requestAnimationFrame(follow); };
+          requestAnimationFrame(follow);
+          await anim.finished;
+        } else {
+          sound.pop();
+          acc?.querySelector('ellipse')?.remove();
+          await group.animate(swayFrames(gx, gy, gx + (fromLeft ? 60 : -60), -EH - 260, 16, 1), { duration: 1300, easing: 'cubic-bezier(0.5, 0, 0.9, 0.6)', fill: 'forwards' }).finished;
+        }
+      } catch { /* sans gravité */ }
+      rope?.remove();
+      group.remove();
+    })();
+  });
+
+  await Promise.all(letters.map((ch, i) => trip(ch, i)));
+  // Toutes les lettres sont là : le cadre du tableau se referme autour du prénom.
+  board.classList.remove('is-building');
+  board.classList.add('is-done');
+  board.setAttribute('aria-label', word);
+  sound.chime();
+  await wait(380);
 }
 
 // ---------- Le staffy noir de la maison : il vient vérifier le prénom et le valide d'un coup de patte ----------
