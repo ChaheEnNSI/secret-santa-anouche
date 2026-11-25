@@ -1,6 +1,6 @@
 // Secret Santa : parcours et mise en scène.
 import { startSnow, overlay, sound, reduceMotion } from './fx.js';
-import { makeElf } from './elf.js';
+import { makeElf, elfStandalone } from './elf.js';
 
 const $ = (sel) => document.querySelector(sel);
 const elvesBox = document.querySelector('#elves');
@@ -486,7 +486,7 @@ const spin = {
   taps: 0, needed: 6, tapAt: -9999, lift: 0, charge: 0, prefetch: null,
 };
 const TAP_LINES = ['Il s\'accroche !', 'Il tient bon…', 'Encore !', 'Il glisse…', 'Il perd l\'équilibre…', 'Presque !', 'Dernier coup !'];
-const BALL_LINES = ['Le verre se fend…', 'Encore !', 'Ça craque de partout…', 'La lumière s\'échappe…', 'Elle va céder…', 'Presque !', 'Dernier coup !'];
+const BALL_LINES = ['Il y a quelqu\'un là-dedans ?', 'Ça s\'agite sérieusement…', 'On entend des clochettes…', 'Elle va céder…', 'Encore un coup !', 'Presque !', 'Dernier coup !'];
 
 // Boule de Noël en 3D temps réel. Si le téléphone ne sait pas l'afficher, on garde la boîte cadeau.
 let ball = null;
@@ -699,7 +699,15 @@ function tapBall(e) {
   if (spin.taps > spin.needed / 2) stage.animate([{ transform: 'translate(0,0)' }, { transform: 'translate(-3px,1px)' }, { transform: 'translate(3px,-1px)' }, { transform: 'translate(0,0)' }], { duration: 160 });
   const hint = $('#gift-hint');
   if (last) { hint.textContent = ''; spin.shaking = true; setTimeout(openGift, 320); return; }
-  hint.textContent = spin.taps === 1 ? (sitter ? 'Fissurée ! Un lutin s\'y accroche. Tape encore pour la briser.' : 'Fissurée ! Tape encore pour la briser.') : BALL_LINES[(spin.taps - 2) % BALL_LINES.length];
+  hint.textContent = spin.taps === 1 ? 'Fissurée ! Et ça cogne à l\'intérieur… Tape encore.' : BALL_LINES[(spin.taps - 2) % BALL_LINES.length];
+  // Réponse venue de l'intérieur : toc-toc, la boule sursaute.
+  clearTimeout(spin.knockT);
+  spin.knockT = setTimeout(() => {
+    if (!ballMode() || state.opening || current !== 'gift' || ball.shattered) return;
+    ball.knock();
+    sound.knock();
+    setTimeout(() => { if (!ball.shattered) ball.knock(); }, 160);
+  }, 480);
 }
 
 function resetGift() {
@@ -710,7 +718,7 @@ function resetGift() {
   reveal.hidden = true;
   reveal.classList.remove('is-in', 'is-named', 'is-tilting');
   reveal.querySelector('.pawstamp')?.remove();
-  elvesBox.querySelectorAll('.dog, .woof, .rider, .impact-ring').forEach((el) => el.remove());
+  elvesBox.querySelectorAll('.dog, .woof, .lino-tag, .rider, .impact-ring').forEach((el) => el.remove());
   revealName.textContent = '';
   after.hidden = true;
   gift.classList.toggle('is-gl', !!ball);
@@ -771,8 +779,13 @@ async function openGift() {
   if (reduceMotion) { showResultInstantly(data); return; }
 
   if (ballMode()) {
-    // 1. La boule éclate : le lutin est projeté, les morceaux volent, la poussière d'or reste en l'air.
-    launchSitter();
+    // 1. La boule éclate : les lutins qui s'y cachaient sont projetés avec les lettres du prénom,
+    //    mélangées, et restent suspendus un instant pendant que la caméra tourne autour.
+    const crewReady = await Promise.race([
+      ball.prepareCrew([...data.target], [elfStandalone(1), elfStandalone(0)]).then(() => true, () => false),
+      wait(700).then(() => false),
+    ]);
+    if (crewReady) removeSitter(); else launchSitter();
     const c = ball.center();
     gift.classList.add('is-open');
     stage.classList.add('is-opened');
@@ -804,11 +817,11 @@ async function openGift() {
   reveal.hidden = false;
   setTimeout(() => { gift.classList.add('is-gone'); reveal.classList.add('is-in'); }, 500);
   $('#gift-title').textContent = 'Et tu as pioché…';
-  $('#gift-hint').textContent = 'Les lutins t\'apportent le prénom, lettre par lettre.';
+  $('#gift-hint').textContent = ballMode() ? 'Les lutins rattrapent les lettres et les remettent dans l\'ordre.' : 'Les lutins t\'apportent le prénom, lettre par lettre.';
   await wait(1700);
   gift.hidden = true;
   await deliverLetters();
-  $('#gift-hint').textContent = 'Dernière vérification par le chien de la maison…';
+  $('#gift-hint').textContent = 'Lino, le chien de la maison, vient vérifier le prénom.';
   await dogValidate();
   $('#gift-hint').textContent = '';
   revealName.classList.remove('is-spelling');
@@ -955,7 +968,7 @@ function deliverLetters() {
 }
 
 // ---------- Le staffy noir de la maison : il vient vérifier le prénom et le valide d'un coup de patte ----------
-const PAW = '<svg viewBox="0 0 40 40" aria-hidden="true"><g fill="#e9c46a"><ellipse cx="20" cy="26.5" rx="9.5" ry="8"/><ellipse cx="8.5" cy="16" rx="4" ry="5.2" transform="rotate(-22 8.5 16)"/><ellipse cx="16" cy="9.8" rx="4" ry="5.4" transform="rotate(-8 16 9.8)"/><ellipse cx="24.5" cy="9.8" rx="4" ry="5.4" transform="rotate(8 24.5 9.8)"/><ellipse cx="31.5" cy="16" rx="4" ry="5.2" transform="rotate(22 31.5 16)"/></g></svg>';
+const SEAL = '<svg viewBox="0 0 64 64" aria-hidden="true"><defs><path id="seal-arc" d="M10.86 39.7A22.5 22.5 0 1 1 53.14 39.7"/></defs><circle cx="32" cy="32" r="30.6" fill="#0e3728" stroke="#e9c46a" stroke-width="1.7"/><text font-family="Fraunces, Georgia, serif" font-style="italic" font-weight="600" font-size="9.6" letter-spacing="0.4" fill="#f7e4a6"><textPath href="#seal-arc" startOffset="50%" text-anchor="middle">validé par Lino</textPath></text><path d="M32 53.2l1.1 2.3 2.3 1.1-2.3 1.1-1.1 2.3-1.1-2.3-2.3-1.1 2.3-1.1z" fill="#e9c46a"/><g transform="translate(20.2 24.6) scale(0.59)" fill="#e9c46a"><ellipse cx="20" cy="26.5" rx="9.5" ry="8"/><ellipse cx="8.5" cy="16" rx="4" ry="5.2" transform="rotate(-22 8.5 16)"/><ellipse cx="16" cy="9.8" rx="4" ry="5.4" transform="rotate(-8 16 9.8)"/><ellipse cx="24.5" cy="9.8" rx="4" ry="5.4" transform="rotate(8 24.5 9.8)"/><ellipse cx="31.5" cy="16" rx="4" ry="5.2" transform="rotate(22 31.5 16)"/></g></svg>';
 function dogSVG() {
   const K = '#17171b', D = '#0c0c0f', H = '#34343f';
   return `<svg class="dog__svg" viewBox="0 0 130 96" aria-hidden="true">
@@ -987,15 +1000,15 @@ function dogSVG() {
     </g>
   </svg>`;
 }
-function addStamp(left, animated) {
+function addStamp(animated) {
   reveal.querySelector('.pawstamp')?.remove();
   const el = document.createElement('span');
   el.className = `pawstamp${animated ? ' is-stamped' : ''}`;
-  if (left != null) el.style.left = `${left}px`;
-  el.innerHTML = PAW;
+  el.innerHTML = SEAL;
   reveal.append(el);
 }
-// La promesse se termine au coup de patte ; le chien finit sa sortie tout seul ensuite.
+// Lino arrive, renifle le prénom, aboie, puis bondit poser son sceau sur le coin de la carte.
+// La promesse se termine au coup de patte ; il finit sa sortie tout seul ensuite.
 function dogValidate() {
   return new Promise((resolve) => {
     (async () => {
@@ -1008,10 +1021,15 @@ function dogValidate() {
       elvesBox.append(dog);
       const bubble = document.createElement('span');
       bubble.className = 'woof';
-      // Dressé contre le bas de la carte, sa patte avant arrive pile sur le bord, à l'endroit du tampon.
-      const stampX = r.left + Math.min(96, r.width * 0.27);
+      const tag = document.createElement('div');
+      tag.className = 'lino-tag';
+      tag.innerHTML = '<strong>Lino</strong><span>contrôleur officiel des tirages</span>';
+      // Au sol, sous la carte : une fois dressé, ses pattes avant arrivent sur le bord du bas.
       const gy = Math.min(window.innerHeight - 4, r.bottom + 30);
-      const x = stampX - 75 * k, y = gy - DH + 4 * k;
+      const x = r.left + Math.min(96, r.width * 0.27) - 75 * k, y = gy - DH + 4 * k;
+      // En plein saut : sa patte avant frappe le coin haut gauche, là où le sceau apparaît.
+      const sealX = r.left + 42, sealY = r.top;
+      const jx = sealX - 0.28 * DW - 49.7 * k * 0.574, jy = sealY - 0.96 * DH + 49.7 * k * 0.819;
       const T = (xx, yy, extra = '') => ({ transform: `translate(${xx}px, ${yy}px) ${extra}` });
       const bark = (text) => {
         dog.classList.remove('is-barking');
@@ -1025,11 +1043,14 @@ function dogValidate() {
       };
       bubble.style.left = `${x + 100 * k}px`;
       bubble.style.top = `${r.bottom - 54}px`;
+      tag.style.left = `${Math.max(10, x + 8)}px`;
+      tag.style.top = `${gy + 8}px`;
       try {
-        // Il déboule au galop et freine sous la carte.
+        // Il déboule au galop et freine sous la carte ; son nom s'affiche.
         await dog.animate([T(-DW - 30, y), { ...T(x + 16, y), offset: 0.82 }, T(x, y)], { duration: 760, easing: 'cubic-bezier(0.2, 0.7, 0.3, 1)', fill: 'forwards' }).finished;
         dog.className = 'dog';
-        await wait(170);
+        elvesBox.append(tag);
+        await wait(280);
         // Il se dresse sur la carte et renifle le prénom.
         dog.className = 'dog is-sniffing';
         await dog.animate([T(x, y, 'rotate(0deg)'), T(x, y - 5, 'rotate(-36deg)')], { duration: 240, easing: 'cubic-bezier(0.3, 1.4, 0.5, 1)', fill: 'forwards' }).finished;
@@ -1038,25 +1059,33 @@ function dogValidate() {
         bark('Wouf !');
         await wait(330);
         bark('Validé !');
-        await wait(340);
-        // Coup de patte : le tampon reste sur la carte.
-        dog.classList.add('is-stamping');
-        await wait(230);
-        addStamp(stampX - r.left - 21, true);
-        sound.seal();
-        resolve();
-        await wait(420);
+        await wait(400);
+        // Il prend son élan et bondit jusqu'au coin de la carte pour y poser son sceau.
         bubble.remove();
         dog.className = 'dog';
-        await dog.animate([T(x, y - 5, 'rotate(-36deg)'), T(x, y, 'rotate(0deg)')], { duration: 190, easing: 'ease-in', fill: 'forwards' }).finished;
-        // Deux petits bonds de joie, puis il repart au galop.
-        await dog.animate([T(x, y), T(x + 6, y - 24, 'rotate(-9deg)'), T(x + 12, y), T(x + 18, y - 17, 'rotate(-6deg)'), T(x + 24, y)], { duration: 520, easing: 'linear', fill: 'forwards' }).finished;
+        await dog.animate([T(x, y - 5, 'rotate(-36deg)'), T(x, y + 4, 'rotate(-12deg) scale(1.1, 0.84)')], { duration: 150, easing: 'ease-out', fill: 'forwards' }).finished;
+        sound.sweep('sine', 260, 720, 0.24, 0.05);
+        setTimeout(() => dog.classList.add('is-stamping'), 70);
+        await dog.animate([T(x, y + 4, 'rotate(-12deg) scale(1.1, 0.84)'), T(jx, jy, 'rotate(-55deg)')], { duration: 310, easing: 'cubic-bezier(0.2, 0.8, 0.3, 1)', fill: 'forwards' }).finished;
+        addStamp(true);
+        sound.seal();
+        sound.thump(2);
+        navigator.vibrate?.([18, 30, 26]);
+        overlay.sparkle(sealX, sealY, 18, 34);
+        resolve();
+        await wait(120);
+        tag.remove();
+        await dog.animate([T(jx, jy, 'rotate(-55deg)'), T(x + 8, y, 'rotate(0deg)')], { duration: 330, easing: 'cubic-bezier(0.5, 0, 0.9, 0.5)', fill: 'forwards' }).finished;
+        dog.className = 'dog';
+        // Réception, deux petits bonds de joie, puis il repart au galop.
+        await dog.animate([T(x + 8, y, 'scale(1.12, 0.86)'), T(x + 8, y), T(x + 14, y - 22, 'rotate(-8deg)'), T(x + 20, y), T(x + 26, y - 15, 'rotate(-6deg)'), T(x + 32, y)], { duration: 640, easing: 'linear', fill: 'forwards' }).finished;
         dog.className = 'dog is-running';
-        await dog.animate([T(x + 24, y), T(W + 40, y)], { duration: 640, easing: 'cubic-bezier(0.5, 0, 0.9, 0.6)', fill: 'forwards' }).finished;
+        await dog.animate([T(x + 32, y), T(W + 40, y)], { duration: 640, easing: 'cubic-bezier(0.5, 0, 0.9, 0.6)', fill: 'forwards' }).finished;
       } catch {
         resolve();
       }
       bubble.remove();
+      tag.remove();
       dog.remove();
     })();
   });
@@ -1064,7 +1093,7 @@ function dogValidate() {
 
 function showResultInstantly(data) {
   revealName.textContent = data.target;
-  addStamp(null, false);
+  addStamp(false);
   gift.hidden = true;
   reveal.hidden = false;
   reveal.classList.add('is-in', 'is-named');

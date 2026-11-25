@@ -503,6 +503,7 @@ export const sound = (() => {
       }
       this.sweep('sine', 120, 38, 0.5, 0.34);
     },
+    knock() { this.sweep('sine', 190, 78, 0.07, 0.2); this.sweep('sine', 185, 76, 0.07, 0.17, 0.16); }, // toc-toc venu de l'intérieur
     bark() { // aboiement bref et grave
       if (!ready()) return;
       this.sweep('sawtooth', 340, 130, 0.12, 0.13);

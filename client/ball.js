@@ -468,6 +468,43 @@ export function createBall({ canvas, anchor }) {
   const shards = buildShards(seeds, glass);
   shards.forEach((s) => scene.add(s.mesh));
 
+  // ---------- Les lutins cachés dans la boule : projetés à l'éclatement, chacun avec une lettre ----------
+  const crew = [];
+  const loadImage = (svg) => new Promise((res, rej) => {
+    const im = new Image();
+    im.onload = () => res(im);
+    im.onerror = rej;
+    im.src = `data:image/svg+xml;charset=utf-8,${encodeURIComponent(svg)}`;
+  });
+  async function prepareCrew(letters, svgs) {
+    crew.forEach((c) => { scene.remove(c.sprite); c.sprite.material.map.dispose(); c.sprite.material.dispose(); });
+    crew.length = 0;
+    const imgs = await Promise.all(svgs.map(loadImage));
+    ['', ...letters].forEach((ch, i) => {
+      const cv = document.createElement('canvas');
+      cv.width = 256; cv.height = 420;
+      const c = cv.getContext('2d');
+      c.drawImage(imgs[i % imgs.length], 0, 121, 256, 299);
+      if (ch) {
+        c.font = 'italic 600 150px Fraunces, Georgia, serif';
+        c.textAlign = 'center'; c.textBaseline = 'middle';
+        c.shadowColor = 'rgba(255, 214, 120, 0.95)'; c.shadowBlur = 24;
+        c.fillStyle = '#f3cf7a';
+        c.fillText(ch, 128, 106);
+        c.shadowBlur = 0; c.globalAlpha = 0.35; c.fillStyle = '#fff6da';
+        c.fillText(ch, 128, 104);
+        c.globalAlpha = 1;
+      }
+      const tex = new CanvasTexture(cv);
+      tex.colorSpace = SRGBColorSpace;
+      const sprite = new Sprite(new SpriteMaterial({ map: tex, transparent: true, depthWrite: false, toneMapped: false }));
+      sprite.scale.set(0.72, 1.18, 1);
+      sprite.visible = false;
+      scene.add(sprite);
+      crew.push({ sprite, vel: new Vector3(), spin: 0, guard: !ch });
+    });
+  }
+
   // ---------- État ----------
   const S = {
     running: false, raf: 0, last: 0, t: 0, visible: false,
@@ -522,6 +559,7 @@ export function createBall({ canvas, anchor }) {
     camera.rotation.set(0, 0, 0);
     pivot.visible = false; ballMesh.visible = true;
     shards.forEach((s) => { s.mesh.visible = false; });
+    crew.forEach((c) => { c.sprite.visible = false; });
     dust.clear();
     motes.forEach((m) => { m.q.fixed = true; m.q.life = 1; });
     halo.material.opacity = 0; core.material.opacity = 0; wave.material.opacity = 0;
@@ -620,6 +658,14 @@ export function createBall({ canvas, anchor }) {
         s.mesh.rotateOnWorldAxis(s.axis, s.spin * dt);
         if (s.mesh.position.y < camBottom || s.mesh.position.z > S.camZ - 0.6) s.mesh.visible = false; else flying++;
       });
+      crew.forEach((c) => {
+        if (!c.sprite.visible) return;
+        c.vel.y -= 11 * dt;
+        c.vel.multiplyScalar(Math.exp(-0.5 * dt));
+        c.sprite.position.addScaledVector(c.vel, dt);
+        c.sprite.material.rotation += c.spin * dt;
+        if (c.sprite.position.y < camBottom - 1 || c.sprite.position.z > S.camZ - 1.5) c.sprite.visible = false; else flying++;
+      });
       uniforms.uGlow.value = Math.max(0, 2.2 - e * 2.4);
       core.material.opacity = Math.max(0, 1 - e / 0.3);
       core.scale.setScalar(3 + e * 16);
@@ -678,6 +724,20 @@ export function createBall({ canvas, anchor }) {
     setDragging(v) { S.dragging = v; if (v) S.spinV = 0; },
     spinBy(dx) { const d = dx * 0.011; S.spin += d; S.spinV = d * 60; },
     setShaking(v) { S.shaking = v; },
+    prepareCrew,
+    // Quelqu'un cogne de l'intérieur : la boule sursaute et un peu de poussière s'échappe.
+    knock() {
+      if (S.shattered) return;
+      S.kick.set(rnd(-0.04, 0.04), rnd(-0.02, 0.04), 0.2);
+      S.tapT = S.t - 0.02;
+      S.thxV += 0.18;
+      ballCenter();
+      for (let i = 0; i < 10; i++) {
+        tmp2.randomDirection();
+        tmp2.z = Math.abs(tmp2.z);
+        dust.emit({ life: rnd(0.3, 0.7), x: center.x + tmp2.x, y: center.y + tmp2.y, z: center.z + tmp2.z, vx: tmp2.x * 1.5, vy: tmp2.y * 1.5, vz: tmp2.z * 1.5, size: rnd(2, 4), grav: -3, drag: 2.5 });
+      }
+    },
     // Coup porté à l'écran en (x, y) : renvoie le point touché sur la boule, en pixels.
     tap(x, y, charge, last) {
       if (S.shattered) return null;
@@ -736,6 +796,23 @@ export function createBall({ canvas, anchor }) {
         if (dir.z > 0.35 && Math.random() < 0.45) s.vel.z += rnd(4, 11); // quelques morceaux foncent vers toi
         s.axis.randomDirection();
         s.spin = rnd(2, 11) * (Math.random() < 0.5 ? -1 : 1);
+      });
+      // Les lutins jaillissent en éventail, lettres mélangées, puis restent suspendus pendant le temps figé.
+      const n = Math.max(1, crew.length - 1);
+      const slots = Array.from({ length: n }, (_, i) => i).sort(() => Math.random() - 0.5);
+      crew.forEach((c, i) => {
+        c.sprite.visible = true;
+        if (c.guard) {
+          c.sprite.position.copy(center).add(tmp2.set(0, 1.5, 0.2));
+          c.vel.set(rnd(-1.6, 1.6), 4.2, 1.8);
+        } else {
+          const a = (slots[i - 1] / n) * TAU + rnd(-0.22, 0.22) + 0.5;
+          const sp = rnd(5.4, 7.2);
+          c.sprite.position.copy(center);
+          c.vel.set(Math.cos(a) * sp * 0.8, Math.sin(a) * sp * 0.85 + 0.5, rnd(1.5, 3.5));
+        }
+        c.sprite.material.rotation = rnd(-0.55, 0.55);
+        c.spin = rnd(-3.5, 3.5);
       });
       pivot.visible = false;
       motes.forEach((m) => { m.q.fixed = false; m.q.life = rnd(0.6, 1.6); m.q.max = m.q.life; m.q.vx = rnd(-2, 2); m.q.vy = rnd(0, 3); m.q.vz = rnd(-2, 2); });
