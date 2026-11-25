@@ -35,11 +35,11 @@ const expected = RUNS / (names.length - 1);
 const maxGap = Math.max(...values.map((v) => Math.abs(v - expected) / expected));
 
 // Exclusions : contrôle que le mécanisme fonctionne.
-const excl = [['Nouné', 'Anouche'], ['Lucas', 'Taline']];
+const excl = [['Nouné', 'Anouche'], ['Luca', 'Taline']];
 let exclErrors = 0;
 for (let i = 0; i < 10_000; i++) {
   const p = makeDraw(names, excl);
-  if (p['Nouné'] === 'Anouche' || p['Anouche'] === 'Nouné' || p['Lucas'] === 'Taline' || p['Taline'] === 'Lucas') exclErrors++;
+  if (p['Nouné'] === 'Anouche' || p['Anouche'] === 'Nouné' || p['Luca'] === 'Taline' || p['Taline'] === 'Luca') exclErrors++;
 }
 
 // Le contrôle doit bien détecter un tirage faux.

@@ -1,7 +1,7 @@
 // Mode aperçu : le serveur est simulé dans le navigateur.
 // Tirage fictif propre à chaque téléphone, rien n'est envoyé nulle part.
 (() => {
-  const NAMES = ['Nouné', 'Anouche', 'Chahé', 'Lucas', 'Taline', 'Vanig', 'Gabjak', 'Antoine', 'Mika', 'Djiv'];
+  const NAMES = ['Nouné', 'Anouche', 'Chahé', 'Luca', 'Taline', 'Vanig', 'Gabjak', 'Antoine', 'Mika', 'Djiv'];
   const store = {
     get: (k) => { try { return JSON.parse(localStorage.getItem(`demo:${k}`)); } catch { return null; } },
     set: (k, v) => { try { localStorage.setItem(`demo:${k}`, JSON.stringify(v)); } catch { /* ignoré */ } },
