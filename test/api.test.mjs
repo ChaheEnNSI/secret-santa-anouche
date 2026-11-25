@@ -16,7 +16,7 @@ const reveal = (token, device) => call('reveal', { method: 'POST', token, device
 const st = await call('state');
 const names = st.data.people.map((p) => p.name);
 t('10 participants', names.length === 10);
-t('aucune info sur qui a pioché', st.data.people.every((p) => Object.keys(p).length === 1));
+t('seulement le prénom et « a pioché » (jamais qui a pioché qui)', st.data.people.every((p) => Object.keys(p).sort().join() === 'drawn,name' && typeof p.drawn === 'boolean'));
 t('prénom inconnu refusé', (await enter('Bob', dev())).status === 404);
 t('sans identifiant de téléphone refusé', (await enter(names[0])).status === 400);
 
@@ -59,6 +59,12 @@ t('bon code accepté', un.status === 200);
 t('nouveau téléphone voit le même tirage', (await reveal(un.data.token, newPhone)).data.target === pairs[A]);
 t('ancien téléphone déconnecté', (await reveal(again.data.token, phones[A])).status === 401);
 t('code refusé depuis un téléphone déjà utilisé', (await call('unlock', { method: 'POST', body: { name: A, code: results[0].code }, device: phones[B] })).status === 403);
+
+// Après des tirages : ceux qui ont pioché sont marqués, et l'état ne contient jamais de cible.
+const after = await call('state');
+const drawnNames = after.data.people.filter((p) => p.drawn).map((p) => p.name);
+t('ceux qui ont pioché sont marqués', drawnNames.length >= 1);
+t('aucune cible dans l\'état public', !JSON.stringify(after.data).includes('target'));
 
 console.log(fail ? `${fail} échec(s)` : 'OK');
 process.exit(fail ? 1 : 0);
