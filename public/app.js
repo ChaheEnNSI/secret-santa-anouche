@@ -505,7 +505,6 @@ function loadBall() {
   return ballLoading;
 }
 const ballMode = () => !!ball && gift.classList.contains('is-gl');
-const isPhone = !!window.matchMedia?.('(pointer: coarse)').matches;
 window.__santa = { get ball() { return ball; } }; // pour les essais automatiques
 // Lutin têtu installé sur le couvercle : c'est lui qui empêche le cadeau de s'ouvrir.
 let sitter = null;
@@ -710,6 +709,8 @@ function resetGift() {
   stage.style.setProperty('--charge', 0);
   reveal.hidden = true;
   reveal.classList.remove('is-in', 'is-named', 'is-tilting');
+  reveal.querySelector('.pawstamp')?.remove();
+  elvesBox.querySelectorAll('.dog, .woof, .rider, .impact-ring').forEach((el) => el.remove());
   revealName.textContent = '';
   after.hidden = true;
   gift.classList.toggle('is-gl', !!ball);
@@ -717,7 +718,7 @@ function resetGift() {
   gift.setAttribute('aria-label', ball ? 'Briser la boule de Noël' : 'Ouvrir le cadeau');
   $('#gift-title').textContent = ball ? 'Ton tirage est à l\'intérieur' : 'Ton cadeau t\'attend';
   $('#gift-hint').hidden = false;
-  $('#gift-hint').textContent = ball ? (isPhone ? 'Elle est à ton nom. Tape dessus ou secoue ton téléphone pour la briser.' : 'Elle est à ton nom. Fais-la tourner, puis tape dessus pour la briser.') : 'Fais-le tourner du doigt, puis touche-le pour l\'ouvrir.';
+  $('#gift-hint').textContent = ball ? 'Elle est à ton nom. Fais-la tourner du doigt, puis tape dessus pour la briser.' : 'Fais-le tourner du doigt, puis touche-le pour l\'ouvrir.';
   if (ball) {
     const me = store.get('name') || state.selected || '';
     ball.setTone(Math.max(0, state.people.findIndex((q) => q.name === me)), me);
@@ -807,6 +808,8 @@ async function openGift() {
   await wait(1700);
   gift.hidden = true;
   await deliverLetters();
+  $('#gift-hint').textContent = 'Dernière vérification par le chien de la maison…';
+  await dogValidate();
   $('#gift-hint').textContent = '';
   revealName.classList.remove('is-spelling');
   revealName.textContent = data.target;
@@ -855,100 +858,213 @@ function prepareLetters(word) {
   revealName.innerHTML = [...word].map((c) => `<span class="ch">${c.replace(/[<>&]/g, '')}</span>`).join('');
 }
 
-async function deliverLetters() {
-  const fontSize = parseFloat(getComputedStyle(revealName).fontSize) || 50;
+// Trajectoire en cloche entre deux points, avec rotation progressive.
+function arcFrames(x0, y0, x1, y1, lift, r0, r1, n = 14) {
+  const f = [];
+  for (let i = 0; i <= n; i++) {
+    const u = i / n;
+    f.push({ transform: `translate(${(x0 + (x1 - x0) * u).toFixed(1)}px, ${(y0 + (y1 - y0) * u - lift * 4 * u * (1 - u)).toFixed(1)}px) rotate(${(r0 + (r1 - r0) * u).toFixed(1)}deg)` });
+  }
+  return f;
+}
+
+// Lettre plantée dans sa case : note de clochette, onde au pied de la lettre, la carte encaisse le choc.
+function impactFx(x, y, i) {
+  sound.note(i + 2);
+  sound.thump(0);
+  navigator.vibrate?.(10);
+  overlay.sparkle(x, y - 22, 12, 24);
+  const ring = document.createElement('i');
+  ring.className = 'impact-ring';
+  ring.style.setProperty('--x', `${x}px`);
+  ring.style.setProperty('--y', `${y}px`);
+  elvesBox.append(ring);
+  ring.addEventListener('animationend', () => ring.remove(), { once: true });
+  reveal.animate([{ translate: '0 0' }, { translate: '0 5px' }, { translate: '0 0' }], { duration: 170, easing: 'ease-out' });
+}
+
+// Chaque lutin arrive en vol plané, debout sur sa lettre, la plante dans sa case et repart en salto de l'autre côté.
+function deliverLetters() {
+  const fs = parseFloat(getComputedStyle(revealName).fontSize) || 50;
   const spans = [...revealName.querySelectorAll('.ch')];
-  const W = window.innerWidth, H = window.innerHeight;
-  const EW = 60, EH = 69, HANDS = 15, PUSH = 24, PULL = 26;
-  const trips = spans.map((span, i) => new Promise((resolve) => {
-    setTimeout(async () => {
-      const r = span.getBoundingClientRect();
+  const rects = spans.map((sp) => sp.getBoundingClientRect());
+  const W = window.innerWidth;
+  const EW = 76, EH = 87;
+  const last = spans.length - 1;
+  const placed = spans.map((span, i) => new Promise((resolve) => {
+    (async () => {
+      await wait(i * 430);
+      const r = rects[i];
       const cx = r.left + r.width / 2;
-      const cy = r.top + r.height / 2;
-      const fromLeft = cx < W / 2 ? i % 3 !== 2 : i % 3 === 2;
-      const elf = makeElf(i % 2, 'is-tiptoe is-shifty');
-      elf.style.setProperty('--fs', `${fontSize}px`);
-      elf.insertAdjacentHTML('afterbegin', `<span class="elf__letter">${span.textContent}</span>`);
+      const dir = i % 2 === 0 ? 1 : -1; // sens du vol : 1 = de gauche à droite
+      const base = 'elf elf--big rider';
+      const elf = makeElf(i % 2, 'elf--big rider is-flailing');
+      elf.style.setProperty('--fs', `${fs}px`);
+      elf.insertAdjacentHTML('afterbegin', `<span class="elf__board">${span.textContent}</span>`);
       elvesBox.append(elf);
-      const letter = elf.querySelector('.elf__letter');
-      const lh = letter.offsetHeight || fontSize;
-      const ax = cx - EW / 2;
-      const ay = cy + PUSH - HANDS + lh / 2;
-      const sx = fromLeft ? -EW - 20 : W + 20;
-      const sy = Math.min(H - EH - 24, ay + rand(70, 170));
-      const at = (x, y, extra = '') => `translate(${x}px, ${y}px) ${extra}`;
+      const board = elf.querySelector('.elf__board');
+      const svg = elf.querySelector('.elf__svg');
+      const squash = () => svg.animate([{ transform: 'scale(1, 1)' }, { transform: 'scale(1.22, 0.74)' }, { transform: 'scale(0.9, 1.12)' }, { transform: 'scale(1, 1)' }], { duration: 260, easing: 'ease-out' });
+      const ix = cx - EW / 2, iy = r.top - EH + fs * 0.2; // position du lutin au moment de l'impact
+      const sx = dir > 0 ? -EW - 40 : W + 40, sy = iy - rand(30, 110);
+      const ex = dir > 0 ? W + 40 : -EW - 40, ey = iy + rand(40, 160);
+      const crooked = i === last && spans.length > 1;
       try {
-        // 1. Il arrive en douce, sur la pointe des pieds, en regardant partout.
-        await elf.animate(hopFrames(sx, sy, ax, ay, 5, rand(8, 14), fromLeft ? 5 : -5), { duration: 1150, easing: 'cubic-bezier(0.45, 0, 0.75, 1)', fill: 'forwards' }).finished;
-        elf.classList.remove('is-tiptoe', 'is-shifty');
-        elf.classList.add('look-up');
-        // 2. Il pousse la lettre dans sa case : elle s'écrase comme de la gelée.
-        elf.animate([
-          { transform: at(ax, ay, 'scale(1, 1)') },
-          { transform: at(ax, ay + 5, 'scale(1.1, 0.86)'), offset: 0.3 },
-          { transform: at(ax, ay - 12, 'scale(0.94, 1.08)'), offset: 0.65 },
-          { transform: at(ax, ay, 'scale(1, 1)') },
-        ], { duration: 380, easing: 'ease-out', fill: 'forwards' });
-        await letter.animate([{ transform: 'translateX(-50%) translateY(0)' }, { transform: `translateX(-50%) translateY(-${PUSH}px)` }], { duration: 230, delay: 60, easing: 'cubic-bezier(0.2, 0.7, 0.3, 1)', fill: 'forwards' }).finished;
-        letter.style.visibility = 'hidden';
+        // 1. Vol plané depuis le bord de l'écran, traînée d'étincelles derrière la lettre.
+        sound.sweep('sine', 480, 920, 0.26, 0.028, 0.3);
+        [260, 400, 520].forEach((ms) => setTimeout(() => {
+          if (!elf.isConnected) return;
+          const b = board.getBoundingClientRect();
+          overlay.sparkle(b.left + b.width / 2, b.top + b.height / 2, 4, 10);
+        }, ms));
+        await elf.animate(arcFrames(sx, sy, ix, iy, rand(50, 90), dir * 18, 0), { duration: 600, easing: 'cubic-bezier(0.35, 0, 0.85, 0.75)', fill: 'forwards' }).finished;
+        // 2. Impact : la lettre s'enfonce dans sa case, le lutin s'écrase puis se détend.
+        board.style.visibility = 'hidden';
         span.classList.add('is-placed');
-        sound.note(i + 2);
-        navigator.vibrate?.(8);
-        await wait(170);
-        // 3. Ça colle : il tire pour décoller ses mains, un fil doré s'étire…
-        elf.classList.remove('look-up');
-        elf.classList.add('is-shocked');
-        const top = r.top + r.height * 0.78;
-        const handY = ay + HANDS - 4;
-        const goo = document.createElement('div');
-        goo.className = 'goo';
-        goo.style.left = `${cx - 2.5}px`;
-        goo.style.top = `${top}px`;
-        goo.style.height = `${handY + PULL - top}px`;
-        elvesBox.append(goo);
-        sound.squish();
-        const pullOpts = { duration: 430, easing: 'cubic-bezier(0.5, 0, 0.9, 0.6)', fill: 'forwards' };
-        goo.animate([{ transform: `scaleY(${Math.max(0.05, (handY - top) / (handY + PULL - top))})` }, { transform: 'scaleY(1)' }], pullOpts);
-        span.animate([{ transform: 'none' }, { transform: 'scale(0.93, 1.16) translateY(3px)' }], { ...pullOpts, fill: 'none' });
-        await elf.animate([
-          { transform: at(ax, ay, 'rotate(0deg)') },
-          { transform: at(ax, ay + PULL * 0.6, `rotate(${fromLeft ? -6 : 6}deg)`), offset: 0.6 },
-          { transform: at(ax, ay + PULL, `rotate(${fromLeft ? 5 : -5}deg) scale(1.04, 0.95)`) },
-        ], pullOpts).finished;
-        // 4. …et ça lâche d'un coup : la lettre tremblote, le lutin tombe à la renverse.
-        goo.animate([{ transform: 'scaleY(1)', opacity: 1 }, { transform: 'scaleY(0)', opacity: 0.6 }], { duration: 140, easing: 'ease-in', fill: 'forwards' }).finished.then(() => goo.remove());
-        span.animate([
-          { transform: 'scale(0.93, 1.16)' }, { transform: 'scale(1.12, 0.88)' }, { transform: 'scale(0.97, 1.04)' }, { transform: 'none' },
-        ], { duration: 420, easing: 'ease-out' });
-        sound.plop();
-        overlay.sparkle(cx, cy, 10, 16);
+        if (crooked) {
+          span.classList.add('is-crooked');
+          span.animate([{ transform: 'scale(1.5, 0.5)' }, { transform: `rotate(${dir * 15}deg) translateY(5px)` }], { duration: 220, easing: 'ease-out', fill: 'forwards' });
+        }
+        impactFx(cx, r.bottom - 8, i);
+        squash();
+        if (crooked) {
+          // La dernière lettre est restée de travers : il la regarde, puis saute dessus pour la redresser.
+          elf.className = `${base} is-shocked pose-down`;
+          sound.squeak();
+          await wait(420);
+          elf.className = `${base} is-flailing`;
+          await elf.animate(arcFrames(ix, iy, ix, iy, 66, 0, 0), { duration: 460, easing: 'linear', fill: 'forwards' }).finished;
+          span.animate([{ transform: `rotate(${dir * 15}deg) translateY(5px)` }, { transform: `rotate(${dir * -6}deg)` }, { transform: `rotate(${dir * 3}deg)` }, { transform: 'none' }], { duration: 400, easing: 'ease-out', fill: 'forwards' });
+          impactFx(cx, r.bottom - 8, i + 1);
+          squash();
+        }
         resolve();
-        await elf.animate([
-          { transform: at(ax, ay + PULL) },
-          { transform: at(ax + (fromLeft ? -10 : 10), ay + PULL + 14, `rotate(${fromLeft ? -24 : 24}deg) scale(1.1, 0.85)`), offset: 0.45 },
-          { transform: at(ax + (fromLeft ? -12 : 12), ay + PULL + 6) },
-        ], { duration: 360, easing: 'ease-out', fill: 'forwards' }).finished;
-        elf.classList.remove('is-shocked');
-        elf.classList.add('is-cheering');
-        await wait(380);
-        elf.classList.remove('is-cheering');
-        elf.classList.add('is-walking');
-        const fx = ax + (fromLeft ? -12 : 12);
-        const ex = fromLeft ? -EW - 30 : W + 30;
-        await elf.animate(hopFrames(fx, ay + PULL + 6, ex, sy - rand(0, 80), 3, rand(30, 46), fromLeft ? -8 : 8), { duration: 850, easing: 'linear', fill: 'forwards' }).finished;
+        elf.className = `${base} is-cheering`;
+        await wait(120);
+        // 3. Rebond en salto, sortie par l'autre côté.
+        elf.className = base;
+        await elf.animate(arcFrames(ix, iy, ex, ey, rand(90, 140), 0, dir * 360), { duration: 760, easing: 'linear', fill: 'forwards' }).finished;
       } catch {
         span.classList.add('is-placed');
         resolve();
       }
       elf.remove();
-    }, i * 380);
+    })();
   }));
-  await Promise.all(trips);
-  await wait(300);
+  return Promise.all(placed).then(() => wait(260));
+}
+
+// ---------- Le staffy noir de la maison : il vient vérifier le prénom et le valide d'un coup de patte ----------
+const PAW = '<svg viewBox="0 0 40 40" aria-hidden="true"><g fill="#e9c46a"><ellipse cx="20" cy="26.5" rx="9.5" ry="8"/><ellipse cx="8.5" cy="16" rx="4" ry="5.2" transform="rotate(-22 8.5 16)"/><ellipse cx="16" cy="9.8" rx="4" ry="5.4" transform="rotate(-8 16 9.8)"/><ellipse cx="24.5" cy="9.8" rx="4" ry="5.4" transform="rotate(8 24.5 9.8)"/><ellipse cx="31.5" cy="16" rx="4" ry="5.2" transform="rotate(22 31.5 16)"/></g></svg>';
+function dogSVG() {
+  const K = '#17171b', D = '#0c0c0f', H = '#34343f';
+  return `<svg class="dog__svg" viewBox="0 0 130 96" aria-hidden="true">
+    <g class="dleg dleg-hf" stroke="${D}" stroke-width="9"><path d="M45 60L41 76L46 90"/><ellipse cx="48.5" cy="91" rx="6" ry="3.2" fill="${D}" stroke="none"/></g>
+    <g class="dleg dleg-ff" stroke="${D}" stroke-width="9"><path d="M80 60V90"/><ellipse cx="82.5" cy="91" rx="6" ry="3.2" fill="${D}" stroke="none"/></g>
+    <path class="dtail" d="M31 44C21 42 13 47 8 56C16 51 23 50 31 51Z" fill="${K}"/>
+    <path d="M28 47C30 38 44 35 60 36C74 36 86 37 92 44C99 52 98 64 92 70C86 75 76 73 68 70C58 67 48 67 40 66C31 65 26 56 28 47Z" fill="${K}"/>
+    <path d="M33 40C46 35.5 72 35 88 40.5" stroke="${H}" stroke-width="1.6" fill="none" stroke-linecap="round"/>
+    <path d="M93.5 49C98.5 54 97.5 64 92 69.5C88.5 64 89 55 93.5 49Z" fill="#efeae0"/>
+    <path d="M74 45C82 47 86 55 83 63M35 50C41 52 45 58 42 64" stroke="${H}" stroke-width="1.5" fill="none" stroke-linecap="round"/>
+    <g class="dleg dleg-hn" stroke="${K}" stroke-width="10"><path d="M36 58L31 75L37 90"/><ellipse cx="39.5" cy="91" rx="6.5" ry="3.4" fill="${K}" stroke="none"/></g>
+    <g class="dleg dleg-fn" stroke="${K}" stroke-width="10"><path d="M88 60V90"/><ellipse cx="90.5" cy="91" rx="6.5" ry="3.4" fill="${K}" stroke="none"/><path d="M93 92.4h4" stroke="#efeae0" stroke-width="2.6"/></g>
+    <g class="dhead">
+      <path d="M79 39C85 30 93 23 100 20L109 45C103 51 94 53 87 50Z" fill="${K}"/>
+      <path d="M84.5 31.5L93 50" stroke="#b21f35" stroke-width="5" stroke-linecap="round"/>
+      <circle cx="94.5" cy="52.5" r="3" fill="#e9c46a"/>
+      <g class="djaw"><path d="M103 37L121 38.5C122 43 117 46.5 110.5 46.5C106 46.5 103 43 103 37Z" fill="${D}"/><path d="M111 40.5C111.5 47 117.5 48 118.5 41Z" fill="#e8798b"/></g>
+      <ellipse cx="103" cy="27" rx="14.5" ry="13" fill="${K}"/>
+      <circle cx="100" cy="35.5" r="9.5" fill="${K}"/>
+      <path d="M105 23C114 21 124 24.5 126.5 30.5C127.5 35 124 38.5 119 39.5L105 40.5Z" fill="${K}"/>
+      <path d="M92 20C97 14.5 108 14 114 19" stroke="${H}" stroke-width="1.6" fill="none" stroke-linecap="round"/>
+      <path d="M121.5 39C114 41.5 107 41.5 100.5 38" stroke="#000" stroke-width="1.4" fill="none" stroke-linecap="round"/>
+      <path d="M96 31C97.5 35 100 37.5 103.5 38.5" stroke="${H}" stroke-width="1.3" fill="none" stroke-linecap="round"/>
+      <ellipse cx="125.2" cy="29.6" rx="3.3" ry="2.7" fill="#050506"/><circle cx="124.4" cy="28.6" r="0.9" fill="#8a8a96"/>
+      <g class="deye"><circle cx="108.5" cy="25.5" r="2.5" fill="#6a3d1c"/><circle cx="108.9" cy="25.5" r="1.4" fill="#0a0605"/><circle cx="109.6" cy="24.7" r="0.7" fill="#fff"/></g>
+      <path d="M104.5 21.5q4-2.2 7.5-0.4" stroke="${H}" stroke-width="1.3" fill="none" stroke-linecap="round"/>
+      <path class="dear" d="M91 21C87.5 10 96 7.5 102 13C99 15 96.5 19 95.5 24Z" fill="${D}"/>
+      <path d="M92.5 19.5C91 13 95.5 11 99.5 13.5" stroke="${H}" stroke-width="1.2" fill="none" stroke-linecap="round"/>
+    </g>
+  </svg>`;
+}
+function addStamp(left, animated) {
+  reveal.querySelector('.pawstamp')?.remove();
+  const el = document.createElement('span');
+  el.className = `pawstamp${animated ? ' is-stamped' : ''}`;
+  if (left != null) el.style.left = `${left}px`;
+  el.innerHTML = PAW;
+  reveal.append(el);
+}
+// La promesse se termine au coup de patte ; le chien finit sa sortie tout seul ensuite.
+function dogValidate() {
+  return new Promise((resolve) => {
+    (async () => {
+      const r = reveal.getBoundingClientRect();
+      const W = window.innerWidth;
+      const DW = 150, DH = 111, k = DW / 124;
+      const dog = document.createElement('div');
+      dog.className = 'dog is-running';
+      dog.innerHTML = dogSVG();
+      elvesBox.append(dog);
+      const bubble = document.createElement('span');
+      bubble.className = 'woof';
+      // Dressé contre le bas de la carte, sa patte avant arrive pile sur le bord, à l'endroit du tampon.
+      const stampX = r.left + Math.min(96, r.width * 0.27);
+      const gy = Math.min(window.innerHeight - 4, r.bottom + 30);
+      const x = stampX - 75 * k, y = gy - DH + 4 * k;
+      const T = (xx, yy, extra = '') => ({ transform: `translate(${xx}px, ${yy}px) ${extra}` });
+      const bark = (text) => {
+        dog.classList.remove('is-barking');
+        void dog.offsetWidth;
+        dog.classList.add('is-barking');
+        sound.bark();
+        navigator.vibrate?.(14);
+        bubble.textContent = text;
+        bubble.remove();
+        elvesBox.append(bubble);
+      };
+      bubble.style.left = `${x + 100 * k}px`;
+      bubble.style.top = `${r.bottom - 54}px`;
+      try {
+        // Il déboule au galop et freine sous la carte.
+        await dog.animate([T(-DW - 30, y), { ...T(x + 16, y), offset: 0.82 }, T(x, y)], { duration: 760, easing: 'cubic-bezier(0.2, 0.7, 0.3, 1)', fill: 'forwards' }).finished;
+        dog.className = 'dog';
+        await wait(170);
+        // Il se dresse sur la carte et renifle le prénom.
+        dog.className = 'dog is-sniffing';
+        await dog.animate([T(x, y, 'rotate(0deg)'), T(x, y - 5, 'rotate(-36deg)')], { duration: 240, easing: 'cubic-bezier(0.3, 1.4, 0.5, 1)', fill: 'forwards' }).finished;
+        sound.sniff();
+        await wait(560);
+        bark('Wouf !');
+        await wait(330);
+        bark('Validé !');
+        await wait(340);
+        // Coup de patte : le tampon reste sur la carte.
+        dog.classList.add('is-stamping');
+        await wait(230);
+        addStamp(stampX - r.left - 21, true);
+        sound.seal();
+        resolve();
+        await wait(420);
+        bubble.remove();
+        dog.className = 'dog';
+        await dog.animate([T(x, y - 5, 'rotate(-36deg)'), T(x, y, 'rotate(0deg)')], { duration: 190, easing: 'ease-in', fill: 'forwards' }).finished;
+        // Deux petits bonds de joie, puis il repart au galop.
+        await dog.animate([T(x, y), T(x + 6, y - 24, 'rotate(-9deg)'), T(x + 12, y), T(x + 18, y - 17, 'rotate(-6deg)'), T(x + 24, y)], { duration: 520, easing: 'linear', fill: 'forwards' }).finished;
+        dog.className = 'dog is-running';
+        await dog.animate([T(x + 24, y), T(W + 40, y)], { duration: 640, easing: 'cubic-bezier(0.5, 0, 0.9, 0.6)', fill: 'forwards' }).finished;
+      } catch {
+        resolve();
+      }
+      bubble.remove();
+      dog.remove();
+    })();
+  });
 }
 
 function showResultInstantly(data) {
   revealName.textContent = data.target;
+  addStamp(null, false);
   gift.hidden = true;
   reveal.hidden = false;
   reveal.classList.add('is-in', 'is-named');
@@ -1013,31 +1129,6 @@ document.addEventListener('click', (e) => {
 // ---------- Démarrage ----------
 startSnow($('#snow'));
 try { history.replaceState({ screen: 'home' }, ''); } catch { /* cadre restreint */ }
-
-// ---------- Capteurs du téléphone : secouer pour frapper la boule, pencher pour faire bouger le décor ----------
-function enableMotion() {
-  [window.DeviceMotionEvent, window.DeviceOrientationEvent].forEach((E) => {
-    try { if (typeof E?.requestPermission === 'function') E.requestPermission().catch(() => {}); } catch { /* ignoré */ }
-  });
-}
-$('#enter-btn').addEventListener('click', enableMotion);
-$('#me-btn').addEventListener('click', enableMotion);
-let lastShake = 0;
-window.addEventListener('devicemotion', (e) => {
-  const a = e.acceleration;
-  let m = 0;
-  if (a && a.x != null) m = Math.hypot(a.x, a.y, a.z);
-  else { const g = e.accelerationIncludingGravity; if (g && g.x != null) m = Math.abs(Math.hypot(g.x, g.y, g.z) - 9.81); }
-  const now = performance.now();
-  if (m < 13 || now - lastShake < 380) return;
-  if (current !== 'gift' || !ballMode() || gift.hidden || state.opening || gift.classList.contains('is-open')) return;
-  lastShake = now;
-  tapGift();
-});
-window.addEventListener('deviceorientation', (e) => {
-  if (e.gamma == null || reduceMotion) return;
-  document.documentElement.style.setProperty('--px', Math.max(-1, Math.min(1, e.gamma / 25)).toFixed(3));
-}, { passive: true });
 
 // ---------- Lutin espion qui passe la tête au bord de l'écran ----------
 const peek = { timer: 0, el: null, caught: 0 };

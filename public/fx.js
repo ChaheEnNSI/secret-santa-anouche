@@ -503,6 +503,20 @@ export const sound = (() => {
       }
       this.sweep('sine', 120, 38, 0.5, 0.34);
     },
+    bark() { // aboiement bref et grave
+      if (!ready()) return;
+      this.sweep('sawtooth', 340, 130, 0.12, 0.13);
+      this.sweep('square', 210, 95, 0.11, 0.05, 0.01);
+      const t = ctx.currentTime;
+      const src = noise(0.09);
+      const f = ctx.createBiquadFilter();
+      f.type = 'bandpass'; f.frequency.value = 900; f.Q.value = 0.8;
+      const g = ctx.createGain();
+      g.gain.setValueAtTime(0.16, t);
+      g.gain.exponentialRampToValueAtTime(0.0001, t + 0.09);
+      src.connect(f).connect(g).connect(ctx.destination);
+      src.start(t);
+    },
     // --- Bruitages des lutins ---
     sweep(type, f0, f1, dur, vol, delay = 0) { // glissando simple
       if (!ready()) return;

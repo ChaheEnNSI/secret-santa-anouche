@@ -484,12 +484,6 @@ export function createBall({ canvas, anchor }) {
 
   try { renderer.initTexture(map); renderer.initTexture(rough); renderer.compile(scene, camera); } catch { /* sans gravité */ }
 
-  let tilt = 0, tiltSmooth = 0;
-  window.addEventListener('deviceorientation', (e) => {
-    if (e.gamma == null) return;
-    tilt = Math.max(-1, Math.min(1, e.gamma / 40));
-  }, { passive: true });
-
   const center = new Vector3(), tmp = new Vector3(), tmp2 = new Vector3();
   const ballCenter = () => hang.getWorldPosition(center);
   function toScreen(v) {
@@ -583,8 +577,7 @@ export function createBall({ canvas, anchor }) {
       pivot.visible = !!S.seen;
       // Pendule amorti, bousculé par les coups.
       const w2 = 10.5, damp = 1.25;
-      tiltSmooth += (tilt - tiltSmooth) * (1 - Math.exp(-realDt * 5));
-      S.thzV += (-w2 * (S.thz - tiltSmooth * 0.2) - damp * S.thzV + Math.sin(S.t * 0.7) * 0.03) * realDt;
+      S.thzV += (-w2 * S.thz - damp * S.thzV + Math.sin(S.t * 0.7) * 0.03) * realDt;
       S.thxV += (-w2 * S.thx - damp * S.thxV) * realDt;
       S.thz += S.thzV * realDt; S.thx += S.thxV * realDt;
       if (!S.dragging) { S.spin += S.spinV * realDt; S.spinV += (0.35 - S.spinV) * (1 - Math.exp(-realDt * 1.6)); }

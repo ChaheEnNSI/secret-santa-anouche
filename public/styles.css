@@ -716,3 +716,83 @@ button { cursor: pointer; }
 .stage.is-gl .pulse { display: none; }
 .gift.is-gl .g3, .gift.is-gl .g3-shadow, .gift.is-gl .g3-beam, .gift.is-gl .orb, .gift.is-gl .shock { display: none; }
 .elves .sitter--ball { left: 0; top: 0; transform-origin: 50% 90%; pointer-events: none; }
+
+/* Lutins acrobates : ils arrivent debout sur leur lettre */
+.elf--big { width: 76px; height: 87px; }
+.elf.rider { transform-origin: 50% 62%; }
+.elf.rider .elf__svg { transform-origin: 50% 100%; }
+.elf__board {
+  position: absolute; left: 50%; top: calc(100% - var(--fs, 50px) * 0.2); z-index: 0;
+  transform: translateX(-50%);
+  font-family: var(--serif); font-style: italic; font-weight: 600; font-size: var(--fs, 48px); line-height: 1;
+  font-variation-settings: 'SOFT' 100, 'WONK' 1, 'opsz' 144;
+  color: var(--gold); white-space: nowrap;
+  text-shadow: 0 0 16px rgba(233, 196, 106, 0.8), 0 0 4px rgba(255, 246, 214, 0.7);
+}
+.reveal__name .ch.is-crooked { animation: none; }
+.impact-ring {
+  position: absolute; left: 0; top: 0; width: 16px; height: 16px; margin: -8px 0 0 -8px; border-radius: 50%;
+  border: 2px solid #f7e4a6; box-shadow: 0 0 12px rgba(233, 196, 106, 0.75);
+  animation: impact 0.48s ease-out forwards; pointer-events: none;
+}
+@keyframes impact {
+  from { transform: translate(var(--x), var(--y)) scale(0.5, 0.25); opacity: 1; }
+  to { transform: translate(var(--x), var(--y)) scale(6.5, 2); opacity: 0; }
+}
+
+/* Le staffy noir */
+.dog { position: absolute; left: 0; top: 0; width: 150px; height: 111px; transform-origin: 28% 96%; will-change: transform; pointer-events: none; }
+.dog__svg {
+  display: block; width: 100%; height: 100%; overflow: visible;
+  filter: drop-shadow(0 0 1px rgba(255, 244, 214, 0.6)) drop-shadow(0 0 9px rgba(255, 236, 190, 0.3)) drop-shadow(0 5px 4px rgba(0, 0, 0, 0.45));
+}
+.dog__svg g, .dog__svg path { transform-box: view-box; }
+.dleg path { fill: none; stroke-linecap: round; stroke-linejoin: round; }
+.dleg-fn { transform-origin: 88px 60px; }
+.dleg-ff { transform-origin: 80px 60px; }
+.dleg-hn { transform-origin: 36px 58px; }
+.dleg-hf { transform-origin: 45px 60px; }
+.dtail { transform-origin: 30px 48px; animation: dwag 0.13s ease-in-out infinite alternate; }
+@keyframes dwag { from { transform: rotate(-26deg); } to { transform: rotate(22deg); } }
+.dhead { transform-origin: 88px 44px; }
+.djaw { transform-origin: 104px 38px; animation: dpant 0.3s ease-in-out infinite alternate; }
+@keyframes dpant { from { transform: rotate(5deg); } to { transform: rotate(13deg); } }
+.deye { transform-origin: 108.5px 25.5px; animation: blink 3.1s infinite; }
+.dear { transform-origin: 94px 20px; }
+.dog.is-running .dleg-fn { animation: dgf 0.16s ease-in-out infinite alternate; }
+.dog.is-running .dleg-ff { animation: dgf 0.16s ease-in-out -0.05s infinite alternate; }
+.dog.is-running .dleg-hn { animation: dgh 0.16s ease-in-out infinite alternate; }
+.dog.is-running .dleg-hf { animation: dgh 0.16s ease-in-out -0.05s infinite alternate; }
+.dog.is-running .dog__svg { animation: dbob 0.16s ease-in-out infinite alternate; }
+.dog.is-running .dear { animation: dearflap 0.16s ease-in-out infinite alternate; }
+@keyframes dgf { from { transform: rotate(-44deg); } to { transform: rotate(34deg); } }
+@keyframes dgh { from { transform: rotate(36deg); } to { transform: rotate(-34deg); } }
+@keyframes dbob { from { transform: translateY(-5px) rotate(-5deg); } to { transform: translateY(1px) rotate(4deg); } }
+@keyframes dearflap { from { transform: rotate(-16deg); } to { transform: rotate(10deg); } }
+.dog.is-sniffing .dhead { animation: dsniff 0.15s ease-in-out infinite alternate; }
+@keyframes dsniff { from { transform: rotate(-12deg); } to { transform: rotate(-18deg); } }
+.dog.is-barking .dhead { animation: dbark 0.24s ease-out; }
+.dog.is-barking .djaw { animation: dbarkjaw 0.24s ease-out; }
+@keyframes dbark { 0%, 100% { transform: rotate(-14deg); } 30% { transform: rotate(-32deg); } }
+@keyframes dbarkjaw { 0%, 100% { transform: rotate(8deg); } 30% { transform: rotate(36deg); } }
+.dog.is-stamping .dleg-fn { animation: dstamp 0.24s cubic-bezier(0.3, 0, 0.2, 1) forwards; }
+@keyframes dstamp { 0% { transform: rotate(0deg); } 55% { transform: rotate(-80deg); } 100% { transform: rotate(-6deg); } }
+.woof {
+  position: absolute; left: 0; top: 0; padding: 5px 11px 6px; border-radius: 14px 14px 14px 4px;
+  background: #f7f2e7; color: #12382b; white-space: nowrap;
+  font-family: var(--serif); font-style: italic; font-weight: 600; font-size: 15px; line-height: 1;
+  box-shadow: 0 6px 14px -6px rgba(0, 0, 0, 0.6);
+  transform-origin: 0 100%; animation: woofpop 0.2s cubic-bezier(0.3, 1.6, 0.5, 1);
+}
+@keyframes woofpop { from { scale: 0.3; opacity: 0; } to { scale: 1; opacity: 1; } }
+/* Tampon « patte » laissé sur le bord de la carte */
+.pawstamp {
+  position: absolute; left: 76px; bottom: -13px; width: 42px; height: 42px; z-index: 3; rotate: -14deg; pointer-events: none;
+  filter: drop-shadow(0 0 6px rgba(233, 196, 106, 0.55)) drop-shadow(0 2px 2px rgba(0, 0, 0, 0.5));
+}
+.pawstamp svg { display: block; width: 100%; height: 100%; }
+.pawstamp.is-stamped { animation: pawin 0.26s cubic-bezier(0.2, 1.5, 0.4, 1); }
+@keyframes pawin { from { scale: 2.6; opacity: 0; rotate: -34deg; } to { scale: 1; opacity: 1; rotate: -14deg; } }
+
+/* La ligne d'aide garde deux lignes de haut : rien ne saute quand son texte change */
+#gift-hint { min-height: 3.1em; }

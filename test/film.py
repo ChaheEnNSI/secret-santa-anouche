@@ -32,13 +32,13 @@ with sync_playwright() as p:
     pg.goto(BASE)
     pg.wait_for_selector('.tag', state='attached', timeout=20000)
     pg.clock.pause_at(pg.evaluate('Date.now()') + 50)
-    n = [0]; acc = [0.0]
+    n = [0]; acc = [0.0]; shoot = [os.environ.get('ONLY_END') != '1']
     def frame():
         acc[0] += 1000 / 30
         ms = int(acc[0]); acc[0] -= ms
         pg.clock.run_for(ms)
         pg.evaluate(STEP_JS, ms)
-        pg.screenshot(path=f'{OUT}/{n[0]:05d}.jpg', type='jpeg', quality=90)
+        if shoot[0]: pg.screenshot(path=f'{OUT}/{n[0]:05d}.jpg', type='jpeg', quality=90)
         n[0] += 1
         if n[0] >= MAXF: raise SystemExit
     def run(seconds):
@@ -65,6 +65,7 @@ with sync_playwright() as p:
         for dx, dy in pts:
             if pg.evaluate('document.querySelectorAll("#taps i.is-on").length >= document.querySelectorAll("#taps i").length'): break
             pg.touchscreen.tap(cx + dx, cy + dy); run(0.62)
+        shoot[0] = True
         print('dernier coup à l\'image', n[0], f'({time.time() - t_start:.0f}s)', flush=True)
         for _ in range(30 * 25):
             frame()
