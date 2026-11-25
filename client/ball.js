@@ -533,7 +533,7 @@ export function createBall({ canvas, anchor }) {
     S.last = now;
     watchSpeed(raw);
     step(realDt);
-    renderer.render(scene, camera);
+    if (!S.holdRender) renderer.render(scene, camera);
     if (S.shattered && S.shatterT > 1.2 && !S.flying && S.alive === 0) stop();
   }
 
@@ -629,6 +629,7 @@ export function createBall({ canvas, anchor }) {
   return {
     start, stop,
     reset() { resetState(); layout(); },
+    set holdRender(v) { S.holdRender = v; }, // pour filmer image par image
     // Pour les essais : avance la simulation sans attendre l'horloge, puis dessine une image.
     advance(seconds) { for (let t = 0; t < seconds; t += 1 / 60) step(1 / 60); renderer.render(scene, camera); },
     get shattered() { return S.shattered; },
