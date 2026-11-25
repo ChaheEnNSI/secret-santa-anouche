@@ -910,3 +910,88 @@ button { cursor: pointer; }
 .flake { position: absolute; width: 5px; height: 5px; margin: -2.5px 0 0 -2.5px; border-radius: 50%; background: #fff; box-shadow: 0 0 6px rgba(255, 255, 255, 0.9); pointer-events: none; }
 .steam { position: absolute; width: 38px; height: 38px; margin: -19px 0 0 -19px; border-radius: 50%; background: radial-gradient(closest-side, rgba(255, 255, 255, 0.75), rgba(255, 255, 255, 0)); filter: blur(3px); opacity: 0; pointer-events: none; animation: steam 0.95s ease-out forwards; }
 @keyframes steam { 0% { opacity: 0; transform: translateY(6px) scale(0.5); } 22% { opacity: 0.85; } 100% { opacity: 0; transform: translateY(-58px) scale(2.1); } }
+
+/* =========================================================
+   Le tableau à volets (sept cases, volets qui basculent pour de vrai)
+   ========================================================= */
+.reveal__name.is-board { opacity: 1; background: none; color: inherit; font-style: normal; }
+.board {
+  --cw: clamp(30px, 9.6vw, 40px);
+  --chh: calc(var(--cw) * 1.5);
+  position: relative; display: inline-flex; gap: 3px; padding: 8px 9px 9px; border-radius: 12px;
+  background: linear-gradient(180deg, #0c1f18, #06120e);
+  box-shadow: inset 0 2px 7px rgba(0, 0, 0, 0.75), 0 0 0 1.5px #b8923f, 0 0 0 3.5px rgba(233, 196, 106, 0.2), 0 16px 26px -14px rgba(0, 0, 0, 0.85);
+}
+/* vis aux quatre coins du cadre */
+.board::before {
+  content: ''; position: absolute; inset: 0; border-radius: inherit; pointer-events: none;
+  background:
+    radial-gradient(circle at 5px 5px, #e9c46a 0 1.3px, transparent 1.8px),
+    radial-gradient(circle at calc(100% - 5px) 5px, #e9c46a 0 1.3px, transparent 1.8px),
+    radial-gradient(circle at 5px calc(100% - 5px), #e9c46a 0 1.3px, transparent 1.8px),
+    radial-gradient(circle at calc(100% - 5px) calc(100% - 5px), #e9c46a 0 1.3px, transparent 1.8px);
+}
+/* reflet de vitre qui traverse le tableau quand le prénom est affiché */
+.board::after {
+  content: ''; position: absolute; inset: 0; border-radius: inherit; pointer-events: none; z-index: 6;
+  background: linear-gradient(105deg, transparent 42%, rgba(255, 255, 255, 0.2) 50%, transparent 58%) 140% 0 / 300% 100% no-repeat;
+}
+.board.is-done::after { animation: boardgloss 0.9s ease-out 0.15s both; }
+.reveal.is-named .board::after { animation: boardgloss 5.5s ease-in-out 1.2s infinite; }
+@keyframes boardgloss { 0% { background-position: 140% 0; } 22%, 100% { background-position: -40% 0; } }
+
+.flap {
+  position: relative; flex: none; width: var(--cw); height: var(--chh);
+  perspective: 240px; -webkit-perspective: 240px;
+  transition: width 0.42s cubic-bezier(0.5, 0, 0.2, 1), margin 0.42s cubic-bezier(0.5, 0, 0.2, 1), opacity 0.3s;
+}
+.flap > span { position: absolute; left: 0; width: 100%; height: 50%; overflow: hidden; }
+.flap__top, .flap__fall--top { top: 0; border-radius: 5px 5px 1px 1px; background: linear-gradient(180deg, #2a3a32, #18251f); box-shadow: inset 0 1px 0 rgba(255, 255, 255, 0.13); }
+.flap__bot, .flap__fall--bot { top: 50%; border-radius: 1px 1px 5px 5px; background: linear-gradient(180deg, #0f1914, #1c2a23); box-shadow: inset 0 -1px 0 rgba(0, 0, 0, 0.55); }
+.flap b {
+  position: absolute; left: 0; top: 0; width: 100%; height: 200%;
+  display: grid; place-items: center;
+  font-family: var(--serif); font-style: normal; font-weight: 600; font-size: calc(var(--cw) * 0.94); line-height: 1;
+  color: #f3d58a; text-shadow: 0 0 10px rgba(233, 196, 106, 0.32);
+}
+.flap__bot b, .flap__fall--bot b { top: -100%; }
+.flap__fall { visibility: hidden; z-index: 2; will-change: transform; -webkit-backface-visibility: hidden; backface-visibility: hidden; }
+.flap__fall--top { transform-origin: 50% 100%; }
+.flap__fall--bot { transform-origin: 50% 0; }
+.flap__fall i { position: absolute; inset: 0; background: #000; opacity: 0; }
+/* charnière */
+.flap::after {
+  content: ''; position: absolute; left: 0; right: 0; top: calc(50% - 1px); height: 2px; z-index: 3;
+  background: linear-gradient(180deg, rgba(0, 0, 0, 0.9), rgba(255, 255, 255, 0.08));
+}
+/* axes de chaque côté */
+.flap::before {
+  content: ''; position: absolute; left: -2px; right: -2px; top: calc(50% - 4px); height: 8px; z-index: 4;
+  background: radial-gradient(circle at 2px 4px, #040d0a 0 2.5px, transparent 3px), radial-gradient(circle at calc(100% - 2px) 4px, #040d0a 0 2.5px, transparent 3px);
+}
+.flap.is-locked b { animation: flaplock 0.6s ease-out; }
+@keyframes flaplock { 0% { color: #fff; text-shadow: 0 0 22px rgba(255, 236, 170, 1), 0 0 6px #fff; } 100% { color: #f3d58a; text-shadow: 0 0 10px rgba(233, 196, 106, 0.32); } }
+/* case inutilisée : elle se referme et laisse sa place */
+.flap.is-out { width: 0; margin-right: -3px; opacity: 0; overflow: hidden; }
+
+/* La manivelle, plantée sur le bord haut de la carte, et sa chaîne jusqu'au tableau */
+.crank { position: absolute; right: 44px; top: -39px; width: 30px; height: 30px; z-index: 3; pointer-events: none; animation: crankin 0.3s cubic-bezier(0.3, 1.5, 0.5, 1) both; }
+.crank.is-gone { animation: crankout 0.38s ease-in forwards; }
+@keyframes crankin { from { opacity: 0; transform: translateY(14px) scale(0.4); } to { opacity: 1; transform: none; } }
+@keyframes crankout { to { opacity: 0; transform: translateY(14px) scale(0.4); } }
+.crank__gear { position: absolute; inset: 0; width: 100%; height: 100%; overflow: visible; filter: drop-shadow(0 2px 3px rgba(0, 0, 0, 0.5)); }
+.crank.is-turning .crank__gear { animation: crankspin 0.3s linear infinite; }
+.crank.is-turning.is-slow .crank__gear { animation-duration: 0.75s; }
+@keyframes crankspin { to { transform: rotate(360deg); } }
+.crank__post { position: absolute; left: 13px; top: 15px; width: 4px; height: 25px; border-radius: 2px; background: linear-gradient(90deg, #8a6421, #e9c46a, #8a6421); }
+.crank__chain { position: absolute; left: 14px; top: 39px; width: 2px; height: var(--drop, 60px); opacity: 0.8; background: repeating-linear-gradient(180deg, #e9c46a 0 3px, transparent 3px 6px); }
+.crank.is-turning .crank__chain { animation: crankchain 0.16s linear infinite; }
+@keyframes crankchain { to { background-position: 0 6px; } }
+/* le lutin à la manivelle : ses mains suivent la poignée, son corps accompagne */
+.elf.cranker { transform-origin: 50% 50%; }
+.elf.is-cranking .arm-carry { animation: crankhands 0.3s linear infinite; }
+.elf.is-cranking .elf__svg { animation: crankbob 0.15s ease-in-out infinite alternate; }
+.elf.is-cranking.is-slow .arm-carry { animation-duration: 0.75s; }
+.elf.is-cranking.is-slow .elf__svg { animation-duration: 0.375s; }
+@keyframes crankhands { 0%, 100% { transform: translate(6px, -3px); } 25% { transform: translate(3px, 6px); } 50% { transform: translate(-6px, 3px); } 75% { transform: translate(-3px, -6px); } }
+@keyframes crankbob { from { transform: translateY(0) rotate(-2deg); } to { transform: translateY(2px) rotate(3deg); } }

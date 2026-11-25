@@ -1,7 +1,6 @@
 // Secret Santa : parcours et mise en scène.
 import { startSnow, overlay, sound, reduceMotion } from './fx.js';
 import { makeElf, elfStandalone } from './elf.js';
-import { createMolten } from './molten.js';
 
 const $ = (sel) => document.querySelector(sel);
 const elvesBox = document.querySelector('#elves');
@@ -719,8 +718,8 @@ function resetGift() {
   reveal.hidden = true;
   reveal.classList.remove('is-in', 'is-named', 'is-tilting');
   reveal.querySelector('.pawstamp')?.remove();
-  reveal.querySelector('.molten')?.remove();
-  elvesBox.querySelectorAll('.dog, .woof, .lino-tag, .founder, .cooler, .flake, .steam').forEach((el) => el.remove());
+  reveal.querySelector('.crank')?.remove();
+  elvesBox.querySelectorAll('.dog, .woof, .lino-tag, .cranker').forEach((el) => el.remove());
   revealName.textContent = '';
   after.hidden = true;
   gift.classList.toggle('is-gl', !!ball);
@@ -784,7 +783,7 @@ async function openGift() {
     // 1. La boule éclate : les lutins qui s'y cachaient sont projetés avec les lettres du prénom,
     //    mélangées, et restent suspendus un instant pendant que la caméra tourne autour.
     const crewReady = await Promise.race([
-      ball.prepareCrew([...data.target], [elfStandalone(1), elfStandalone(0)]).then(() => true, () => false),
+      ball.prepareCrew(Array(6).fill(''), [elfStandalone(1), elfStandalone(0)]).then(() => true, () => false),
       wait(700).then(() => false),
     ]);
     if (crewReady) removeSitter(); else launchSitter();
@@ -798,7 +797,7 @@ async function openGift() {
     navigator.vibrate?.([30, 40, 80]);
     ball.shatter();
     overlay.sparkle(c.x, c.y, 50, 120);
-    await wait(1750);
+    await wait(1500);
   } else {
     // 1. Le lutin est éjecté, le couvercle s'envole, la lumière jaillit.
     launchSitter();
@@ -814,15 +813,17 @@ async function openGift() {
     await wait(450);
   }
 
-  // 2. La carte se redresse, puis les lutins apportent les lettres une à une.
+  // 2. La carte se redresse avec son tableau à volets déjà lancé ; un lutin vient le freiner.
+  const quick = ballMode();
   prepareLetters(data.target);
   reveal.hidden = false;
-  setTimeout(() => { gift.classList.add('is-gone'); reveal.classList.add('is-in'); }, 500);
+  if (quick) gift.hidden = true;
+  setTimeout(() => { gift.classList.add('is-gone'); reveal.classList.add('is-in'); }, quick ? 60 : 500);
   $('#gift-title').textContent = 'Et tu as pioché…';
-  $('#gift-hint').textContent = 'Les lutins coulent le prénom en or, lettre par lettre.';
-  await wait(1700);
+  $('#gift-hint').textContent = 'Le tableau du tirage s\'emballe. Un lutin attrape la manivelle.';
+  await wait(quick ? 200 : 1700);
   gift.hidden = true;
-  await deliverLetters();
+  await deliverLetters(data.target, quick ? 620 : 0);
   $('#gift-hint').textContent = 'Lino, le chien de la maison, vient vérifier le prénom.';
   await dogValidate();
   $('#gift-hint').textContent = '';
@@ -865,22 +866,78 @@ function hopFrames(x0, y0, x1, y1, hops, height, lean) {
   return frames;
 }
 
-// Lettre en or massif : huit couches empilées en profondeur donnent l'épaisseur, la face avant est polie, un reflet passe dessus.
-const LAYERS = 8;
-function letter3D(ch) {
-  let html = '<span class="ch__3d" aria-hidden="true">';
-  for (let i = LAYERS; i >= 1; i--) {
-    const k = (i - 1) / (LAYERS - 1);
-    const c = [196 - 89 * k, 145 - 71 * k, 46 - 28 * k].map(Math.round);
-    html += `<i class="s" style="--i:${i};color:rgb(${c})">${ch}</i>`;
-  }
-  return `${html}<i class="f" style="--i:0">${ch}</i><i class="sh">${ch}</i></span>`;
-}
-// Emplacements du prénom : un tiret doré par lettre tant qu'elle n'est pas posée (set = toutes déjà posées).
+// ---------- Le tableau à volets ----------
+// Toujours sept cases, quelle que soit la longueur du prénom : rien ne laisse deviner qui a été pioché.
+const CELLS = 7;
+const FLAP_CHARS = 'ABCDEFGHIJKLMNOPQRSTUVWXYZÉ';
+const esc = (c) => c.replace(/[<>&"]/g, '');
+const flapHTML = (ch) => `<span class="flap" aria-hidden="true"><span class="flap__top"><b>${ch}</b></span><span class="flap__bot"><b>${ch}</b></span><span class="flap__fall flap__fall--top"><b></b><i></i></span><span class="flap__fall flap__fall--bot"><b></b><i></i></span></span>`;
+let flaps = [];
+// set = true : le prénom est déjà connu (retour sur le site), seules ses lettres sont affichées, déjà en place.
 function prepareLetters(word, set = false) {
-  const esc = (c) => c.replace(/[<>&"]/g, '');
-  revealName.classList.add('is-spelling');
-  revealName.innerHTML = `<span class="ch-sr">${esc(word)}</span>${[...word].map((c, i) => `<span class="ch${set ? ' is-set' : ''}" data-ch="${esc(c)}" style="--d:${(i * 0.16).toFixed(2)}s" aria-hidden="true"><span class="ch__ghost">${esc(c)}</span>${letter3D(esc(c))}</span>`).join('')}`;
+  const letters = [...word.toLocaleUpperCase('fr-FR')].map(esc);
+  const n = set ? letters.length : Math.max(CELLS, letters.length);
+  const off = Math.floor((n - letters.length) / 2);
+  revealName.classList.add('is-board');
+  revealName.innerHTML = `<span class="board${set ? ' is-done' : ''}" role="img"${set ? ` aria-label="${esc(word)}"` : ''}>${Array.from({ length: n }, (_, i) => flapHTML(set ? letters[i] : '')).join('')}</span>`;
+  flaps = [...revealName.firstElementChild.children].map((el, i) => {
+    const [top, bot, fTop, fBot] = el.children;
+    return {
+      el, target: letters[i - off] || '', cur: set ? letters[i] : '', lock: false,
+      topB: top.firstChild, botB: bot.firstChild,
+      fTop, fTopB: fTop.firstChild, fTopSh: fTop.lastChild,
+      fBot, fBotB: fBot.firstChild, fBotSh: fBot.lastChild,
+    };
+  });
+}
+const randFlap = (not) => {
+  let ch = not;
+  while (ch === not) ch = FLAP_CHARS[Math.floor(Math.random() * FLAP_CHARS.length)];
+  return ch;
+};
+// Un volet tombe : la moitié haute du caractère courant bascule vers le bas et découvre le suivant,
+// dont la moitié basse vient se rabattre. settle = dernier volet, il rebondit en se posant.
+function flip(c, next, ms, settle = false) {
+  c.topB.textContent = next;
+  c.fTopB.textContent = c.cur;
+  c.fBotB.textContent = next;
+  c.fTop.style.visibility = 'visible';
+  const shade = ms > 85;
+  if (shade) c.fTopSh.animate([{ opacity: 0 }, { opacity: 0.6 }], { duration: ms / 2, fill: 'forwards' });
+  return c.fTop.animate([{ transform: 'rotateX(0deg)' }, { transform: 'rotateX(-90deg)' }], { duration: ms / 2, easing: 'ease-in', fill: 'forwards' }).finished
+    .then(() => {
+      c.fTop.style.visibility = 'hidden';
+      c.fBot.style.visibility = 'visible';
+      if (shade) c.fBotSh.animate([{ opacity: 0.6 }, { opacity: 0 }], { duration: ms / 2, fill: 'forwards' });
+      const frames = settle
+        ? [{ transform: 'rotateX(90deg)' }, { transform: 'rotateX(0deg)', offset: 0.5 }, { transform: 'rotateX(16deg)', offset: 0.72 }, { transform: 'rotateX(0deg)' }]
+        : [{ transform: 'rotateX(90deg)' }, { transform: 'rotateX(0deg)' }];
+      return c.fBot.animate(frames, { duration: settle ? ms : ms / 2, easing: 'ease-out', fill: 'forwards' }).finished;
+    })
+    .then(() => {
+      c.botB.textContent = next;
+      c.fBot.style.visibility = 'hidden';
+      c.cur = next;
+    });
+}
+// Une case défile à toute vitesse, puis ralentit sur trois volets et se verrouille sur sa lettre.
+async function spinCell(c, base) {
+  try {
+    while (!c.lock) await flip(c, randFlap(c.cur), base + Math.random() * 20);
+    await flip(c, randFlap(c.cur), 92);
+    await flip(c, randFlap(c.cur), 135);
+    await flip(c, c.target, 240, true);
+  } catch {
+    c.topB.textContent = c.target;
+    c.botB.textContent = c.target;
+  }
+  c.el.classList.add('is-locked');
+  sound.clack(!c.target);
+  if (c.target) {
+    const r = c.el.getBoundingClientRect();
+    overlay.sparkle(r.left + r.width / 2, r.top + r.height / 2, 7, 16);
+    navigator.vibrate?.(8);
+  }
 }
 
 // Trajectoire en cloche entre deux points, avec rotation progressive.
@@ -892,132 +949,63 @@ function arcFrames(x0, y0, x1, y1, lift, r0, r1, n = 14) {
   }
   return f;
 }
-
-// Petite animation pilotée image par image : fn reçoit l'avancement de 0 à 1.
-function tween(ms, fn, ease = (k) => k) {
-  return new Promise((resolve) => {
-    const t0 = performance.now();
-    const step = () => {
-      const k = Math.min(1, (performance.now() - t0) / ms);
-      fn(ease(k));
-      if (k < 1) requestAnimationFrame(step); else resolve();
-    };
-    requestAnimationFrame(step);
-  });
+// Position d'un élément d'après la mise en page seule, sans tenir compte d'une animation en cours.
+function layoutRect(el) {
+  let x = 0, y = 0;
+  for (let e = el; e; e = e.offsetParent) { x += e.offsetLeft; y += e.offsetTop; }
+  x -= window.scrollX; y -= window.scrollY;
+  return { left: x, top: y, right: x + el.offsetWidth, bottom: y + el.offsetHeight, width: el.offsetWidth, height: el.offsetHeight };
 }
 
-// ---------- La fonderie : le prénom est coulé en or, lettre par lettre ----------
-const LADLE = '<span class="ladle"><svg viewBox="0 0 50 40" aria-hidden="true"><path d="M0 9H27" stroke="#6b4423" stroke-width="3.4" stroke-linecap="round"/><g class="ladle__pot"><path d="M24 6H48L45.5 25Q36 31 26.5 25Z" fill="#2b2f36"/><path d="M28 12Q30 22 33 26" stroke="rgba(255,255,255,0.14)" stroke-width="1.6" fill="none" stroke-linecap="round"/><ellipse class="ladle__gold" cx="36" cy="6.6" rx="10.8" ry="2.7" fill="#ffd98a"/><path d="M24 6H48" stroke="#5d646e" stroke-width="2.2" stroke-linecap="round"/></g></svg></span>';
-const BUCKET = '<span class="ladle ladle--bucket"><svg viewBox="0 0 50 40" aria-hidden="true"><g class="ladle__pot"><path d="M22 8H48L45 31H25Z" fill="#8fa3b8"/><path d="M25 15H45.6M25.8 23H44.8" stroke="rgba(0,0,0,0.16)" stroke-width="1.2"/><ellipse cx="35" cy="7.4" rx="12.4" ry="4.4" fill="#fff"/><path d="M22 8H48" stroke="#cbd8e4" stroke-width="2.4" stroke-linecap="round"/></g></svg></span>';
-const dot = (cls, x, y) => {
-  const el = document.createElement('i');
-  el.className = cls;
-  el.style.left = `${x}px`;
-  el.style.top = `${y}px`;
-  elvesBox.append(el);
-  return el;
-};
-function snowFall(x, y0, y1) {
-  for (let k = 0; k < 7; k++) {
-    const el = dot('flake', x + rand(-12, 12), y0);
-    el.animate([{ translate: '0 0', opacity: 1 }, { translate: `${rand(-14, 14)}px ${y1 - y0 + rand(-6, 22)}px`, opacity: 0.9 }], { duration: rand(260, 420), delay: k * 22, easing: 'cubic-bezier(0.4, 0, 1, 0.6)', fill: 'both' }).finished.then(() => el.remove(), () => el.remove());
-  }
-}
-function steamPuff(x, y) {
-  for (let k = 0; k < 4; k++) {
-    const el = dot('steam', x + rand(-14, 14), y + rand(-10, 12));
-    el.style.animationDelay = `${k * 70}ms`;
-    el.addEventListener('animationend', () => el.remove(), { once: true });
-  }
-}
+const CRANK = '<i class="crank__chain"></i><i class="crank__post"></i><svg class="crank__gear" viewBox="0 0 30 30" aria-hidden="true"><circle cx="15" cy="15" r="11.5" fill="none" stroke="#b8923f" stroke-width="5" stroke-dasharray="3.6 3.626"/><circle cx="15" cy="15" r="9.5" fill="#caa24a"/><circle cx="15" cy="15" r="9.5" fill="none" stroke="#8a6421" stroke-width="1"/><circle cx="15" cy="15" r="2.6" fill="#6d4c14"/><path d="M15 15L22.5 9" stroke="#5a3a1c" stroke-width="3" stroke-linecap="round"/><circle cx="23" cy="8.6" r="3.2" fill="#e9c46a"/></svg>';
 
-// Un lutin fondeur marche sur le haut de la carte avec sa louche et verse l'or dans chaque lettre ;
-// le métal monte dans la lettre (shader), puis un second lutin passe avec un seau de neige :
-// vapeur, le métal refroidit et la lettre se détache en relief.
-async function deliverLetters() {
-  const spans = [...revealName.querySelectorAll('.ch')];
-  const fs = parseFloat(getComputedStyle(revealName).fontSize) || 50;
-  const card = reveal.getBoundingClientRect();
-  const molten = createMolten(reveal, spans);
-  const rects = spans.map((sp) => sp.getBoundingClientRect());
-  const cxOf = (i) => rects[i].left + rects[i].width / 2;
-  const band = molten ? molten.band : { top: rects[0].top + fs * 0.14, bottom: rects[0].bottom };
+// Le tableau s'emballe dès que la carte apparaît. Un lutin saute sur la carte, attrape la manivelle
+// qui tourne toute seule et la freine : les cases se verrouillent une à une, de gauche à droite.
+// settle : temps laissé à la carte pour finir de se redresser avant l'arrivée du lutin.
+async function deliverLetters(word, settle = 0) {
+  const board = revealName.querySelector('.board');
+  const cells = flaps;
   const W = window.innerWidth;
-  const EW = 76, EH = 87, LIP = 102; // LIP : distance entre le bord gauche du lutin et le bec de la louche inclinée
-  const standY = card.top - EH + 6;  // debout sur le bord supérieur de la carte
-  const lipY = standY + 64;
-  const at = (x, y = standY, extra = '') => ({ transform: `translate(${x}px, ${y}px) ${extra}` });
+  const EW = 76, EH = 87;
+  reveal.querySelector('.crank')?.remove();
+  const crank = document.createElement('span');
+  crank.className = 'crank is-turning';
+  crank.innerHTML = CRANK;
+  reveal.append(crank);
+  crank.style.setProperty('--drop', `${Math.max(16, board.offsetTop - 2)}px`);
 
-  // 1. Le fondeur saute sur la carte, puis va de lettre en lettre.
-  const founder = makeElf(0, 'elf--big founder pose-carry is-walking');
-  founder.insertAdjacentHTML('beforeend', LADLE);
-  elvesBox.append(founder);
-  let fx = cxOf(0) - LIP;
-  try {
-    await founder.animate(arcFrames(-EW - 30, standY + 70, fx, standY, 52, -10, 0), { duration: 520, easing: 'linear', fill: 'forwards' }).finished;
-    for (let i = 0; i < spans.length; i++) {
-      const nx = cxOf(i) - LIP;
-      if (i > 0) {
-        founder.classList.add('is-walking');
-        await founder.animate([at(fx), at(nx)], { duration: Math.max(170, Math.abs(nx - fx) * 5), easing: 'ease-in-out', fill: 'forwards' }).finished;
-      }
-      fx = nx;
-      founder.classList.remove('is-walking');
-      founder.classList.add('is-pouring');
-      await wait(110);
-      // La coulée : le filet tombe, le métal monte, le filet se coupe.
-      const x = cxOf(i);
-      const dur = Math.max(440, 780 - i * 85);
-      sound.pour(dur / 1000 + 0.25);
-      if (molten) {
-        await tween(110, (k) => molten.setPour(x, lipY, lipY + (band.bottom - lipY) * k, 1));
-        const sparks = setInterval(() => overlay.sparkle(x, molten.levelY(i), 3, 9), 90);
-        await tween(dur, (k) => { molten.fill[i] = k * 1.07; molten.setPour(x, lipY, molten.levelY(i), 1); });
-        clearInterval(sparks);
-        founder.classList.remove('is-pouring');
-        await tween(120, (k) => molten.setPour(x, lipY + (molten.levelY(i) - lipY) * k, molten.levelY(i), 1 - k * 0.4));
-        molten.setPour(0, 0, 0, 0);
-      } else {
-        await wait(dur);
-        founder.classList.remove('is-pouring');
-        spans[i].classList.add('is-cast');
-      }
-      spans[i].classList.add('is-poured');
-      sound.note(i + 2);
-      navigator.vibrate?.(8);
-      overlay.sparkle(x, (band.top + band.bottom) / 2, 14, 26);
-    }
-  } catch { /* on continue : les lettres seront affichées de toute façon */ }
-  // Travail fini : il saute de la carte et s'en va.
-  founder.classList.add('is-walking');
-  founder.animate(arcFrames(fx, standY, W + 40, standY + 50, 62, 0, 12), { duration: 640, easing: 'linear', fill: 'forwards' }).finished.then(() => founder.remove(), () => founder.remove());
+  const LOCK_EVERY = 170;
+  sound.flaps((settle + 400 + cells.length * LOCK_EVERY + 300) / 1000, 30);
+  const spins = cells.map((c, i) => spinCell(c, 58 + (i % 3) * 7));
+  await wait(settle);
 
-  // 2. Le second lutin traverse en courant, de droite à gauche, en vidant son seau de neige sur le métal.
-  $('#gift-hint').textContent = 'Un seau de neige pour refroidir tout ça.';
-  const cooler = makeElf(1, 'elf--big cooler pose-carry is-walking is-pouring');
-  cooler.insertAdjacentHTML('beforeend', BUCKET);
-  elvesBox.append(cooler);
-  const startX = W + 30, endX = -EW - 50, speed = 0.46; // px par milliseconde
-  const runMs = (startX - endX) / speed;
-  cooler.animate([at(startX, standY, 'scaleX(-1)'), at(endX, standY, 'scaleX(-1)')], { duration: runMs, easing: 'linear', fill: 'forwards' }).finished.then(() => cooler.remove(), () => cooler.remove());
-  // Retourné, son seau est à gauche : le bec est à (x + EW - LIP).
-  const cooled = spans.map((sp, i) => new Promise((resolve) => {
-    const when = Math.max(0, (startX + EW - LIP - cxOf(i)) / speed);
-    setTimeout(async () => {
-      const x = cxOf(i);
-      snowFall(x, lipY, band.top);
-      await wait(200);
-      sound.hiss();
-      steamPuff(x, (band.top + band.bottom) / 2);
-      if (molten) await tween(480, (k) => { molten.heat[i] = 1 - k; });
-      sp.classList.add('is-cast');
-      if (molten) await tween(260, (k) => { molten.alpha[i] = 1 - k; });
-      resolve();
-    }, when);
-  }));
-  await Promise.all(cooled);
-  molten?.destroy();
-  await wait(200);
+  // Le lutin : il arrive par la droite, se fait emporter un instant par la manivelle, puis la freine.
+  const card = layoutRect(reveal);
+  const x = card.right - 59 - 58, y = card.top - EH + 6; // ses mains tombent sur le centre de la manivelle
+  const elf = makeElf(0, 'elf--big cranker pose-carry is-walking');
+  elvesBox.append(elf);
+  const hop = elf.animate(arcFrames(W + 30, y + 70, x, y, 50, 10, 0), { duration: 380, easing: 'linear', fill: 'forwards' }).finished.catch(() => {});
+  await hop;
+  elf.classList.remove('is-walking');
+  elf.classList.add('is-cranking');
+  cells.forEach((c, i) => setTimeout(() => { c.lock = true; }, i * LOCK_EVERY));
+  setTimeout(() => { crank.classList.add('is-slow'); elf.classList.add('is-slow'); }, Math.max(0, cells.length - 3) * LOCK_EVERY);
+  await Promise.all(spins);
+
+  crank.classList.remove('is-turning', 'is-slow');
+  board.classList.add('is-done');
+  board.setAttribute('aria-label', word);
+  // Les cases restées vides se referment : le tableau se resserre autour du prénom.
+  cells.forEach((c) => { if (!c.target) c.el.classList.add('is-out'); });
+  // Travail fini : il lâche la manivelle, lève les bras et saute de la carte ; la manivelle se replie.
+  elf.className = 'elf elf--big cranker is-cheering';
+  setTimeout(() => {
+    crank.classList.add('is-gone');
+    elf.classList.add('is-walking');
+    elf.animate(arcFrames(x, y, W + 40, y + 50, 60, 0, 12), { duration: 560, easing: 'linear', fill: 'forwards' }).finished.then(() => elf.remove(), () => elf.remove());
+    setTimeout(() => crank.remove(), 420);
+  }, 320);
+  await wait(180);
 }
 
 // ---------- Le staffy noir de la maison : il vient vérifier le prénom et le valide d'un coup de patte ----------

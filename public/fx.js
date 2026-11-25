@@ -533,6 +533,36 @@ export const sound = (() => {
       src.connect(f).connect(g).connect(ctx.destination);
       src.start(t);
     },
+    flaps(dur = 1.5, rate = 30) { // crépitement d'un tableau à volets qui défile
+      if (!ready()) return;
+      const t = ctx.currentTime;
+      const n = Math.floor(dur * rate);
+      for (let i = 0; i < n; i++) {
+        const at = t + i / rate + Math.random() * 0.014;
+        const src = noise(0.016);
+        const f = ctx.createBiquadFilter();
+        f.type = 'highpass'; f.frequency.value = 1700 + Math.random() * 900;
+        const g = ctx.createGain();
+        g.gain.setValueAtTime(0.045 + Math.random() * 0.03, at);
+        g.gain.exponentialRampToValueAtTime(0.0001, at + 0.016);
+        src.connect(f).connect(g).connect(ctx.destination);
+        src.start(at);
+      }
+    },
+    clack(soft = false) { // un volet se verrouille
+      if (!ready()) return;
+      const t = ctx.currentTime;
+      const src = noise(0.05);
+      const f = ctx.createBiquadFilter();
+      f.type = 'bandpass'; f.frequency.value = 1300; f.Q.value = 0.9;
+      const g = ctx.createGain();
+      g.gain.setValueAtTime(soft ? 0.09 : 0.24, t);
+      g.gain.exponentialRampToValueAtTime(0.0001, t + 0.05);
+      src.connect(f).connect(g).connect(ctx.destination);
+      src.start(t);
+      this.sweep('square', 240, 120, 0.045, soft ? 0.025 : 0.07);
+      if (!soft) this.sweep('sine', 1900, 1500, 0.09, 0.03);
+    },
     bark() { // aboiement bref et grave
       if (!ready()) return;
       this.sweep('sawtooth', 340, 130, 0.12, 0.13);

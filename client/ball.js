@@ -501,7 +501,7 @@ export function createBall({ canvas, anchor }) {
       sprite.scale.set(0.72, 1.18, 1);
       sprite.visible = false;
       scene.add(sprite);
-      crew.push({ sprite, vel: new Vector3(), spin: 0, guard: !ch });
+      crew.push({ sprite, vel: new Vector3(), spin: 0, guard: i === 0 });
     });
   }
 
