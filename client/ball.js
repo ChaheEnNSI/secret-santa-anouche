@@ -4,7 +4,7 @@ import {
   MeshPhysicalMaterial, MeshStandardMaterial, MeshBasicMaterial, CanvasTexture, PMREMGenerator,
   Color, Vector3, Vector4, BufferGeometry, BufferAttribute, Points, ShaderMaterial, AdditiveBlending,
   DoubleSide, BackSide, SRGBColorSpace, ACESFilmicToneMapping, CylinderGeometry, TorusGeometry,
-  LatheGeometry, PlaneGeometry, Vector2, Sprite, SpriteMaterial, RepeatWrapping, Ray, Sphere, Quaternion,
+  LatheGeometry, PlaneGeometry, Vector2, Sprite, SpriteMaterial, RepeatWrapping, Ray, Sphere, Quaternion, Euler,
 } from 'three';
 
 const NS = 64;        // nombre de morceaux (et de cellules de fissures)
@@ -567,6 +567,7 @@ export function createBall({ canvas, anchor, sound = {} }) {
     pivot.visible = false; ballMesh.visible = true;
     shards.forEach((s) => { s.mesh.visible = false; });
     FW.on = false; FW.heads = []; FW.rockets = []; fw.clear(); fwHeads.clear(); canvas.style.zIndex = '';
+    clearName();
     crew.forEach((c) => { c.sprite.visible = false; });
     dust.clear();
     motes.forEach((m) => { m.q.fixed = true; m.q.life = 1; });
@@ -604,7 +605,203 @@ export function createBall({ canvas, anchor, sound = {} }) {
     watchSpeed(raw);
     step(realDt);
     if (!S.holdRender) renderer.render(scene, camera);
-    if (!FW.on && S.shattered && S.shatterT > 1.2 && !S.flying && S.alive === 0) stop();
+    if (!FW.on && !NAME.active && S.shattered && S.shatterT > 1.2 && !S.flying && S.alive === 0) stop();
+  }
+
+  // ---------- Le prénom en éclats de verre doré : une anamorphose ----------
+  // Le prénom est peint en or sur une plaque de verre cachée dans la boule. À l'éclatement, la plaque se brise
+  // en éclats placés à des profondeurs différentes : de tous les angles c'est un nuage de fragments, et c'est
+  // seulement quand la caméra revient pile face à la boule que les éclats s'alignent et forment le prénom.
+  const NAME = { group: new Group(), frags: [], plane: null, mat: null, tex: null, active: false, aligned: false, resolve: null, fly: null, textFrac: 0.8, Wp: 3 };
+  scene.add(NAME.group);
+  const C = new Vector3();
+  function nameCanvas(text) {
+    const c = document.createElement('canvas');
+    c.width = 2048; c.height = 512;
+    const x = c.getContext('2d');
+    // la plaque de verre, à peine visible
+    const rr = (x0, y0, w, h, r) => { x.beginPath(); x.moveTo(x0 + r, y0); x.arcTo(x0 + w, y0, x0 + w, y0 + h, r); x.arcTo(x0 + w, y0 + h, x0, y0 + h, r); x.arcTo(x0, y0 + h, x0, y0, r); x.arcTo(x0, y0, x0 + w, y0, r); x.closePath(); };
+    rr(30, 60, 1988, 392, 140);
+    x.fillStyle = 'rgba(235, 248, 255, 0.07)'; x.fill();
+    x.lineWidth = 5; x.strokeStyle = 'rgba(255, 236, 190, 0.32)'; x.stroke();
+    let fs = 330;
+    x.font = `italic 600 ${fs}px Fraunces, Georgia, serif`;
+    const w0 = x.measureText(text).width;
+    if (w0 > 1700) { fs *= 1700 / w0; x.font = `italic 600 ${fs}px Fraunces, Georgia, serif`; }
+    const tw = x.measureText(text).width;
+    x.textAlign = 'center'; x.textBaseline = 'alphabetic';
+    const by = 256 + fs * 0.33;
+    const g = x.createLinearGradient(0, by - fs * 0.78, 0, by + fs * 0.1);
+    g.addColorStop(0, '#fff6d6'); g.addColorStop(0.35, '#f6d47a'); g.addColorStop(0.7, '#c9902f'); g.addColorStop(1, '#f3cc6d');
+    x.shadowColor = 'rgba(255, 196, 90, 0.9)'; x.shadowBlur = 46;
+    x.fillStyle = g; x.fillText(text, 1024, by);
+    x.shadowBlur = 0;
+    x.fillText(text, 1024, by);
+    return { canvas: c, textFrac: Math.min(1, tw / 2048) };
+  }
+  function clearName() {
+    NAME.frags.forEach((f) => { NAME.group.remove(f.mesh); f.mesh.geometry.dispose(); });
+    NAME.frags = [];
+    if (NAME.plane) { NAME.group.remove(NAME.plane); NAME.plane.geometry.dispose(); NAME.plane = null; }
+    NAME.mat?.dispose(); NAME.tex?.dispose(); NAME.planeMat?.dispose(); NAME.fragTex?.dispose(); NAME.fragTex = null;
+    NAME.mat = NAME.tex = NAME.planeMat = null;
+    NAME.active = NAME.aligned = false; NAME.fly = null; NAME.resolve = null;
+  }
+  function prepareName(text) {
+    clearName();
+    const { canvas: nc, textFrac } = nameCanvas(text);
+    NAME.textFrac = textFrac;
+    NAME.canvas = nc;
+    const tex = new CanvasTexture(nc);
+    tex.colorSpace = SRGBColorSpace;
+    tex.anisotropy = Math.min(8, renderer.capabilities.getMaxAnisotropy());
+    NAME.tex = tex;
+    NAME.mat = new MeshStandardMaterial({ map: tex, emissive: 0xffffff, emissiveMap: tex, emissiveIntensity: 1.15, metalness: 0.7, roughness: 0.28, transparent: true, depthWrite: false, depthTest: false, side: DoubleSide, envMapIntensity: 1.4 });
+    NAME.planeMat = new ShaderMaterial({
+      uniforms: { uMap: { value: tex }, uShine: { value: -1 }, uAlpha: { value: 1 } },
+      vertexShader: 'varying vec2 vUv; void main() { vUv = uv; gl_Position = projectionMatrix * modelViewMatrix * vec4(position, 1.0); }',
+      fragmentShader: `uniform sampler2D uMap; uniform float uShine; uniform float uAlpha; varying vec2 vUv;
+        void main() {
+          vec4 c = texture2D(uMap, vUv);
+          float band = exp(-pow((vUv.x - uShine) * 9.0 - (vUv.y - 0.5) * 2.5, 2.0));
+          vec3 col = c.rgb * c.a + vec3(1.0, 0.95, 0.85) * band * c.a * 0.9;
+          gl_FragColor = vec4(col * uAlpha, c.a * uAlpha);
+        }`,
+      transparent: true, depthWrite: false, depthTest: false, premultipliedAlpha: true,
+    });
+    NAME.ready = true;
+  }
+  // Découpe la plaque en éclats triangulaires irréguliers et les place en anamorphose.
+  function breakName() {
+    const camZ = S.camZ;
+    C.set(0, 0, camZ);
+    // largeur de la plaque : 86 % de la largeur visible à la profondeur de la boule
+    const hh = Math.tan((FOV * Math.PI) / 360) * (camZ - center.z);
+    const Wp = Math.min(2 * hh * camera.aspect * 0.86, 4.4);
+    const Hp = Wp / 4;
+    NAME.Wp = Wp;
+    const cols = 11, rows = 3;
+    const P = [];
+    for (let j = 0; j <= rows; j++) for (let i = 0; i <= cols; i++) {
+      const edge = i === 0 || j === 0 || i === cols || j === rows;
+      P.push([(i / cols + (edge ? 0 : rnd(-0.32, 0.32) / cols)), (j / rows + (edge ? 0 : rnd(-0.3, 0.3) / rows))]);
+    }
+    const at = (i, j) => P[j * (cols + 1) + i];
+    const tris = [];
+    for (let j = 0; j < rows; j++) for (let i = 0; i < cols; i++) {
+      const a = at(i, j), b = at(i + 1, j), c = at(i + 1, j + 1), d = at(i, j + 1);
+      if (Math.random() < 0.5) tris.push([a, b, c], [a, c, d]); else tris.push([a, b, d], [b, c, d]);
+    }
+    // Les éclats portent la trace des fissures ; la plaque réparée (à l'alignement) n'en a plus.
+    const cracked = document.createElement('canvas');
+    cracked.width = NAME.canvas.width; cracked.height = NAME.canvas.height;
+    const cx2 = cracked.getContext('2d');
+    cx2.drawImage(NAME.canvas, 0, 0);
+    cx2.save();
+    cx2.beginPath(); cx2.rect(30, 60, 1988, 392); cx2.clip();
+    cx2.strokeStyle = 'rgba(255, 250, 235, 0.6)'; cx2.lineWidth = 3.5; cx2.lineJoin = 'round';
+    tris.forEach((t) => { cx2.beginPath(); t.forEach(([u, v], k) => (k ? cx2.lineTo(u * 2048, v * 512) : cx2.moveTo(u * 2048, v * 512))); cx2.closePath(); cx2.stroke(); });
+    cx2.restore();
+    const fragTex = new CanvasTexture(cracked);
+    fragTex.colorSpace = SRGBColorSpace;
+    fragTex.anisotropy = NAME.tex.anisotropy;
+    NAME.mat.map = fragTex; NAME.mat.emissiveMap = fragTex; NAME.mat.needsUpdate = true;
+    NAME.fragTex = fragTex;
+    const mid = new Vector3(S.ax, center.y, center.z); // centré sur l'écran, pas sur la boule qui se balance
+    tris.forEach((t) => {
+      const cu = (t[0][0] + t[1][0] + t[2][0]) / 3, cv = (t[0][1] + t[1][1] + t[2][1]) / 3;
+      const pos = new Float32Array(9), uv = new Float32Array(6);
+      t.forEach(([u, v], k) => {
+        pos.set([(u - cu) * Wp, (cv - v) * Hp, 0], k * 3);
+        uv.set([u, 1 - v], k * 2);
+      });
+      const g = new BufferGeometry();
+      g.setAttribute('position', new BufferAttribute(pos, 3));
+      g.setAttribute('uv', new BufferAttribute(uv, 2));
+      g.computeVertexNormals();
+      const mesh = new Mesh(g, NAME.mat);
+      mesh.frustumCulled = false;
+      // position sur la plaque (face à la caméra, centrée sur la boule)
+      const flat = new Vector3(mid.x + (cu - 0.5) * Wp, mid.y + (0.5 - cv) * Hp, mid.z);
+      // anamorphose : glissé le long de la ligne de visée, agrandi d'autant -> même image vue d'ici
+      const sf = rnd(0.55, 1.5);
+      const final = C.clone().add(flat.clone().sub(C).multiplyScalar(sf));
+      const scatter = final.clone().add(tmp2.randomDirection().multiplyScalar(rnd(0.5, 1.4))).add(new Vector3(0, 0, rnd(-0.8, 0.8)));
+      const qStart = new Quaternion().setFromEuler(new Euler(rnd(-3, 3), rnd(-3, 3), rnd(-3, 3)));
+      mesh.position.copy(center);
+      mesh.scale.setScalar(0.01);
+      mesh.quaternion.copy(qStart);
+      NAME.group.add(mesh);
+      NAME.frags.push({ mesh, final, scatter, sf, qStart, spin: rnd(-2, 2) });
+    });
+    const pg = new PlaneGeometry(Wp, Hp);
+    NAME.plane = new Mesh(pg, NAME.planeMat);
+    NAME.plane.position.copy(mid);
+    NAME.plane.visible = false;
+    NAME.plane.frustumCulled = false;
+    NAME.group.add(NAME.plane);
+    NAME.active = true;
+    NAME.aligned = false;
+  }
+  const qI = new Quaternion();
+  const ALIGN = 1.37; // instant où la caméra est revenue pile face à la boule
+  function nameStep(dt) {
+    if (!NAME.active) return;
+    const e = S.shatterT;
+    if (!NAME.aligned) {
+      NAME.frags.forEach((f) => {
+        const m = f.mesh;
+        if (e < 0.16) {
+          const u = 1 - (1 - e / 0.16) ** 3;
+          m.position.lerpVectors(center, f.scatter, u);
+          m.scale.setScalar(0.01 + (f.sf - 0.01) * u);
+        } else {
+          const u0 = Math.min(1, Math.max(0, (e - 0.3) / (ALIGN - 0.3 - 0.02)));
+          const u = u0 * u0 * (3 - 2 * u0);
+          m.position.lerpVectors(f.scatter, f.final, u);
+          m.scale.setScalar(f.sf);
+          m.quaternion.slerpQuaternions(f.qStart, qI, u);
+        }
+      });
+      if (e >= ALIGN) {
+        // Alignement : le prénom apparaît, net, d'un seul coup.
+        NAME.aligned = true;
+        NAME.frags.forEach((f) => { f.mesh.position.copy(f.final); f.mesh.quaternion.identity(); });
+        NAME.plane.visible = true;
+        NAME.alignT = e;
+        NAME.frags.forEach((f) => { f.mesh.visible = false; });
+        core.position.copy(NAME.plane.position);
+        core.material.opacity = 0.85; core.scale.setScalar(3.4);
+        for (let i = 0; i < 140; i++) {
+          const u = Math.random();
+          dust.emit({ life: rnd(0.5, 1.4), x: NAME.plane.position.x + (u - 0.5) * NAME.Wp * NAME.textFrac, y: center.y + rnd(-0.25, 0.25), z: center.z + 0.2, vx: rnd(-0.6, 0.6), vy: rnd(-0.2, 1.4), vz: rnd(0, 0.6), size: rnd(2.5, 6.5), grav: -0.6, drag: 2.2, r: 1, g: rnd(0.82, 0.96), b: rnd(0.5, 0.85) });
+        }
+        sound.chime?.();
+        sound.boom?.();
+        NAME.resolve?.();
+        NAME.resolve = null;
+      }
+      return;
+    }
+    // Aligné : reflet qui balaie le prénom, puis vol jusqu'au tableau.
+    const k = e - NAME.alignT;
+    core.material.opacity = Math.max(0, 0.85 - k * 2.2);
+    core.scale.setScalar(3.4 + k * 3);
+    NAME.planeMat.uniforms.uShine.value = -0.3 + ((k * 0.75) % 1.6);
+    if (NAME.fly) {
+      const f = NAME.fly;
+      f.t += dt;
+      const u0 = Math.min(1, f.t / f.dur);
+      const u = u0 < 0.5 ? 4 * u0 ** 3 : 1 - (-2 * u0 + 2) ** 3 / 2;
+      NAME.plane.position.lerpVectors(f.p0, f.p1, u);
+      NAME.plane.scale.setScalar(f.s0 + (f.s1 - f.s0) * u);
+      if (u0 >= 1 && !f.arrived) { f.arrived = true; f.resolve?.(); }
+      if (f.arrived) {
+        f.fade += dt;
+        NAME.planeMat.uniforms.uAlpha.value = Math.max(0, 1 - f.fade / 0.35);
+        if (f.fade > 0.4) { NAME.active = false; NAME.plane.visible = false; }
+      }
+    }
   }
 
   // ---------- Feu d'artifice final (dans le ciel, derrière la carte) ----------
@@ -807,6 +1004,7 @@ export function createBall({ canvas, anchor, sound = {} }) {
       );
       camera.rotation.set(0, o, 0);
       S.flying = flying;
+      nameStep(realDt);
     }
     S.alive = dust.update(dt, S.t);
   }
@@ -954,8 +1152,9 @@ export function createBall({ canvas, anchor, sound = {} }) {
           c.sprite.position.copy(center).add(tmp2.set(0, 1.5, 0.2));
           c.vel.set(rnd(-1.6, 1.6), 4.2, 1.8);
         } else {
-          const a = (slots[i - 1] / n) * TAU + rnd(-0.22, 0.22) + 0.5;
-          const sp = rnd(5.4, 7.2);
+          const dirs = [2.2, 0.95, -1.57, 2.6, 0.55, -2.1, -1.0];
+          const a = dirs[(slots[i - 1]) % dirs.length] + rnd(-0.15, 0.15);
+          const sp = rnd(8.5, 10.5);
           c.sprite.position.copy(center);
           c.vel.set(Math.cos(a) * sp * 0.8, Math.sin(a) * sp * 0.85 + 0.5, rnd(1.5, 3.5));
         }
@@ -976,6 +1175,24 @@ export function createBall({ canvas, anchor, sound = {} }) {
       core.position.copy(center); wave.position.copy(center);
       S.c = center.clone(); S.orbitDir = Math.random() < 0.5 ? -1 : 1;
       S.shattered = true; S.shatterT = 0; S.flying = shards.length;
+      if (NAME.ready) {
+        NAME.ready = false;
+        breakName();
+        return new Promise((resolve) => { NAME.resolve = resolve; });
+      }
+      return Promise.resolve();
+    },
+    prepareName,
+    // Le prénom aligné vole jusqu'au rectangle donné (coordonnées de l'écran), puis s'efface.
+    flyName(rect) {
+      if (!NAME.plane || !NAME.aligned) return Promise.resolve();
+      const ppu = S.ppu;
+      const cx = rect.left + rect.width / 2, cy = rect.top + rect.height / 2;
+      const p1 = new Vector3((cx - S.W / 2) / ppu, -(cy - S.H / 2) / ppu, NAME.plane.position.z);
+      const s1 = Math.max(0.2, (rect.width * 0.94) / (NAME.Wp * NAME.textFrac * ppu));
+      return new Promise((resolve) => {
+        NAME.fly = { t: 0, dur: 0.55, p0: NAME.plane.position.clone(), p1, s0: NAME.plane.scale.x, s1, fade: 0, arrived: false, resolve };
+      });
     },
     center() { ballCenter(); return toScreen(center); },
     // Sommet du capuchon, en pixels, pour y asseoir le lutin.

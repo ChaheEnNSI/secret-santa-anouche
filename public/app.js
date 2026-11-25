@@ -781,11 +781,13 @@ async function openGift() {
 
   if (reduceMotion) { showResultInstantly(data); return; }
 
-  if (ballMode()) {
-    // 1. La boule éclate : les lutins qui s'y cachaient sont projetés avec les lettres du prénom,
-    //    mélangées, et restent suspendus un instant pendant que la caméra tourne autour.
+  const anamorph = ballMode();
+  if (anamorph) {
+    // 1. La boule éclate : les lutins qui s'y cachaient sont projetés, et la plaque de verre où le prénom
+    //    est peint se brise en éclats dispersés dans l'espace. La caméra tourne autour pendant le temps figé ;
+    //    revenue pile en face, les éclats s'alignent et le prénom apparaît.
     const crewReady = await Promise.race([
-      ball.prepareCrew(Array(6).fill(''), [elfStandalone(1), elfStandalone(0)]).then(() => true, () => false),
+      ball.prepareCrew(Array(3).fill(''), [elfStandalone(1), elfStandalone(0)]).then(() => true, () => false),
       wait(700).then(() => false),
     ]);
     if (crewReady) removeSitter(); else launchSitter();
@@ -797,9 +799,12 @@ async function openGift() {
     flash.classList.add('is-on');
     sound.shatter();
     navigator.vibrate?.([30, 40, 80]);
-    ball.shatter();
+    let aligned = null;
+    try { ball.prepareName(data.target); aligned = ball.shatter(); } catch { aligned = null; }
+    if (!aligned) ball.shatter();
     overlay.sparkle(c.x, c.y, 50, 120);
-    await wait(1500);
+    $('#gift-hint').textContent = '';
+    await Promise.race([aligned || wait(1500), wait(2800)]);
   } else {
     // 1. Le lutin est éjecté, le couvercle s'envole, la lumière jaillit.
     launchSitter();
@@ -815,6 +820,19 @@ async function openGift() {
     await wait(450);
   }
 
+  if (anamorph) {
+    // 2. Le prénom en or plane un instant, la carte se redresse derrière lui,
+    //    puis il vole se poser dans le tableau à volets, qui claque lettre par lettre.
+    prepareLetters(data.target, 'land');
+    reveal.hidden = false;
+    gift.hidden = true;
+    requestAnimationFrame(() => { gift.classList.add('is-gone'); reveal.classList.add('is-in'); });
+    $('#gift-title').textContent = 'Et tu as pioché…';
+    await wait(1150);
+    const boardEl = revealName.querySelector('.board');
+    await Promise.race([ball.flyName(layoutRect(boardEl)), wait(1200)]);
+    await landBoard(data.target);
+  } else {
   // 2. La carte se redresse avec son tableau à volets déjà lancé ; un lutin vient le freiner.
   const quick = ballMode();
   prepareLetters(data.target);
@@ -826,6 +844,7 @@ async function openGift() {
   await wait(quick ? 200 : 1700);
   gift.hidden = true;
   await deliverLetters(data.target, quick ? 620 : 0);
+  }
   $('#gift-hint').textContent = 'Lino, le chien de la maison, vient vérifier le prénom.';
   await dogValidate();
   $('#gift-hint').textContent = '';
@@ -877,9 +896,12 @@ const esc = (c) => c.replace(/[<>&"]/g, '');
 const flapHTML = (ch) => `<span class="flap" aria-hidden="true"><span class="flap__top"><b>${ch}</b></span><span class="flap__bot"><b>${ch}</b></span><span class="flap__fall flap__fall--top"><b></b><i></i></span><span class="flap__fall flap__fall--bot"><b></b><i></i></span></span>`;
 let flaps = [];
 // set = true : le prénom est déjà connu (retour sur le site), seules ses lettres sont affichées, déjà en place.
-function prepareLetters(word, set = false) {
+// mode 'land' : juste les cases du prénom, volets vierges, prêts à recevoir le prénom qui vient se poser.
+function prepareLetters(word, mode = false) {
+  const set = mode === true;
+  const land = mode === 'land';
   const letters = [...word.toLocaleUpperCase('fr-FR')].map(esc);
-  const n = set ? letters.length : Math.max(CELLS, letters.length);
+  const n = set || land ? letters.length : Math.max(CELLS, letters.length);
   const off = Math.floor((n - letters.length) / 2);
   revealName.classList.add('is-board');
   revealName.innerHTML = `<span class="board${set ? ' is-done' : ''}" data-drift role="img"${set ? ` aria-label="${esc(word)}"` : ''}>${Array.from({ length: n }, (_, i) => flapHTML(set ? letters[i] : '')).join('')}</span>`;
@@ -923,6 +945,21 @@ function flip(c, next, ms, settle = false) {
       c.cur = next;
     });
 }
+// Le prénom en or vient de se poser : chaque volet tombe une fois et révèle sa lettre, en vague de gauche à droite.
+async function landBoard(word) {
+  const board = revealName.querySelector('.board');
+  board.classList.add('is-landing');
+  await Promise.all(flaps.map((c, i) => wait(i * 55).then(() => flip(c, c.target, 210, true)).then(() => {
+    c.el.classList.add('is-locked');
+    sound.clack(false);
+    const r = c.el.getBoundingClientRect();
+    overlay.sparkle(r.left + r.width / 2, r.top + r.height / 2, 6, 14);
+  }).catch(() => { c.topB.textContent = c.target; c.botB.textContent = c.target; })));
+  board.classList.add('is-done');
+  board.setAttribute('aria-label', word);
+  await wait(150);
+}
+
 // Une case défile à toute vitesse, puis ralentit sur trois volets et se verrouille sur sa lettre.
 async function spinCell(c, base) {
   try {

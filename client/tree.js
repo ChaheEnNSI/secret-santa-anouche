@@ -57,6 +57,42 @@ function paintBranch() {
   return t;
 }
 
+// Étiquette suspendue sous chaque boule : le prénom en grand, net, toujours tourné vers toi.
+function paintTag(name) {
+  const c = document.createElement('canvas');
+  c.width = 640; c.height = 220;
+  const x = c.getContext('2d');
+  const r = 70, X0 = 14, Y0 = 34, W = 612, Hh = 172;
+  x.beginPath();
+  x.moveTo(X0 + r, Y0); x.arcTo(X0 + W, Y0, X0 + W, Y0 + Hh, r); x.arcTo(X0 + W, Y0 + Hh, X0, Y0 + Hh, r);
+  x.arcTo(X0, Y0 + Hh, X0, Y0, r); x.arcTo(X0, Y0, X0 + W, Y0, r); x.closePath();
+  const bg = x.createLinearGradient(0, Y0, 0, Y0 + Hh);
+  bg.addColorStop(0, '#174c37'); bg.addColorStop(1, '#0b2c20');
+  x.fillStyle = bg;
+  x.shadowColor = 'rgba(0,0,0,0.55)'; x.shadowBlur = 14; x.shadowOffsetY = 6;
+  x.fill();
+  x.shadowColor = 'transparent';
+  x.lineWidth = 7; x.strokeStyle = '#e9c46a'; x.stroke();
+  x.lineWidth = 2; x.strokeStyle = 'rgba(247,228,166,0.45)';
+  x.beginPath(); x.roundRect?.(X0 + 14, Y0 + 14, W - 28, Hh - 28, r - 14); x.stroke();
+  // œillet et fil
+  x.fillStyle = '#e9c46a'; x.beginPath(); x.arc(320, Y0 + 2, 15, 0, Math.PI * 2); x.fill();
+  x.fillStyle = '#0b2c20'; x.beginPath(); x.arc(320, Y0 + 2, 7, 0, Math.PI * 2); x.fill();
+  let fs = 112;
+  x.font = `600 ${fs}px Fraunces, Georgia, serif`;
+  const w = x.measureText(name).width;
+  if (w > 520) { fs *= 520 / w; x.font = `600 ${fs}px Fraunces, Georgia, serif`; }
+  x.textAlign = 'center'; x.textBaseline = 'middle';
+  const g = x.createLinearGradient(0, Y0 + 40, 0, Y0 + Hh - 30);
+  g.addColorStop(0, '#fff3c8'); g.addColorStop(0.55, '#f3cf74'); g.addColorStop(1, '#d9a443');
+  x.fillStyle = g;
+  x.fillText(name, 320, Y0 + Hh / 2 + 6);
+  const t = new CanvasTexture(c);
+  t.colorSpace = SRGBColorSpace;
+  t.anisotropy = 4;
+  return t;
+}
+
 // Petites lueurs (guirlande lumineuse) : points qui scintillent, cachés par les branches quand ils passent derrière.
 function makeLights(positions, colors) {
   const n = positions.length / 3;
@@ -228,12 +264,12 @@ export function createTree({ canvas, people, onPick, sound = {} }) {
   const ringGeo = new TorusGeometry(0.085, 0.016, 8, 20);
   const sphereGeo = new SphereGeometry(1, 48, 32);
   const stringMat = new MeshBasicMaterial({ color: new Color(1.1, 0.9, 0.55) });
-  const BR = 0.32;
+  const BR = 0.3;
   const baubles = people.map((name, i) => {
     const n = people.length;
-    const y = 0.82 + (i / Math.max(1, n - 1)) * 2.25;
+    const y = 0.66 + (i / Math.max(1, n - 1)) * 2.62;
     const theta = i * 2.39996 + 0.4;
-    const rr = R(y) + 0.13;
+    const rr = R(y) + 0.2;
     const hook = new Group();
     hook.position.set(Math.sin(theta) * rr, y + 0.42, Math.cos(theta) * rr);
     hook.rotation.y = theta;
@@ -251,6 +287,16 @@ export function createTree({ canvas, people, onPick, sound = {} }) {
     const ring = new Mesh(ringGeo, goldMetal);
     ring.position.y = 1.25;
     ball.add(mesh, cap, ring);
+    // l'étiquette pend sous la boule (dans l'espace de la boule, d'où la division par BR)
+    const tag = new Sprite(new SpriteMaterial({ map: paintTag(name), transparent: true, depthWrite: false }));
+    tag.scale.set(0.8 / BR, (0.8 * 220 / 640) / BR, 1);
+    tag.position.y = -1 - (0.04 + 0.4 * 220 / 640) / BR;
+    tag.center.set(0.5, 0.5);
+    tag.renderOrder = 2;
+    ball.add(tag);
+    const thread = new Mesh(new CylinderGeometry(0.02, 0.02, 0.07 / BR, 4), stringMat);
+    thread.position.y = -1 - 0.03 / BR;
+    ball.add(thread);
     ball.scale.setScalar(BR);
     swing.add(ball);
     const string = new Mesh(new CylinderGeometry(0.006, 0.006, 0.07, 4), stringMat);
