@@ -164,11 +164,13 @@ async function handleApi(request, env, url) {
   await ensureSchema(env);
   const route = `${request.method} ${url.pathname}`;
 
-  // Aucune information sur qui a déjà pioché : seulement la liste des prénoms.
+  // La liste des prénoms, et qui a déjà pioché (jamais qui a pioché qui).
   if (route === 'GET /api/state') {
     // « round » change quand les tirages sont effacés : les téléphones oublient alors leur ancienne session.
     const round = await getOrCreateMeta(env, 'round', () => crypto.randomUUID().slice(0, 8));
-    return json({ event: EVENT, round, people: people(env).map((p) => ({ name: p.name })) });
+    const rows = await env.DB.prepare('SELECT name FROM people WHERE revealed_at IS NOT NULL').all();
+    const drawn = new Set((rows.results || []).map((r) => r.name));
+    return json({ event: EVENT, round, people: people(env).map((p) => ({ name: p.name, drawn: drawn.has(p.name) })) });
   }
 
   // Entrée après le « contrôle d'identité » (pour rire).

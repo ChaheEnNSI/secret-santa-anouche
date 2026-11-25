@@ -221,6 +221,13 @@ function renderTags({ drop = false } = {}) {
     name.className = 'tag__name';
     name.textContent = person.name;
     btn.append(name);
+    if (person.drawn) {
+      btn.classList.add('is-drawn');
+      const mark = document.createElement('span');
+      mark.className = 'tag__drawn';
+      mark.textContent = 'a pioché';
+      btn.append(mark);
+    }
     const s = { el: swing, base: rand(-2.5, 2.5), a: 0, v: 0 };
     s.a = drop && !reduceMotion ? s.base + (index % 2 ? 1 : -1) * rand(16, 26) : s.base;
     swing.style.transform = `rotate(${s.a.toFixed(2)}deg)`;
@@ -255,6 +262,9 @@ async function loadState({ drop = false } = {}) {
   state.event = data.event;
   renderCountdown();
   renderTags({ drop });
+  tree?.setDrawn(state.people.filter((p) => p.drawn).map((p) => p.name));
+  const done = state.people.filter((p) => p.drawn).length;
+  $('#progress').textContent = done ? `${done} sur ${state.people.length} ont déjà pioché` : '';
   renderMe();
 }
 
@@ -1449,6 +1459,7 @@ function loadTree() {
       tree = m.createTree({
         canvas,
         people: state.people.map((p) => p.name),
+        drawn: state.people.filter((p) => p.drawn).map((p) => p.name),
         sound,
         onPick: (name) => {
           flash.classList.remove('is-on');

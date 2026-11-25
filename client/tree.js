@@ -58,7 +58,7 @@ function paintBranch() {
 }
 
 // Étiquette suspendue sous chaque boule : le prénom en grand, net, toujours tourné vers toi.
-function paintTag(name) {
+function paintTag(name, drawn = false) {
   const c = document.createElement('canvas');
   c.width = 640; c.height = 220;
   const x = c.getContext('2d');
@@ -67,7 +67,8 @@ function paintTag(name) {
   x.moveTo(X0 + r, Y0); x.arcTo(X0 + W, Y0, X0 + W, Y0 + Hh, r); x.arcTo(X0 + W, Y0 + Hh, X0, Y0 + Hh, r);
   x.arcTo(X0, Y0 + Hh, X0, Y0, r); x.arcTo(X0, Y0, X0 + W, Y0, r); x.closePath();
   const bg = x.createLinearGradient(0, Y0, 0, Y0 + Hh);
-  bg.addColorStop(0, '#fffaf0'); bg.addColorStop(1, '#f1e4c6');
+  if (drawn) { bg.addColorStop(0, '#f7dc8f'); bg.addColorStop(1, '#d9a73f'); } // a déjà pioché : étiquette dorée
+  else { bg.addColorStop(0, '#fffaf0'); bg.addColorStop(1, '#f1e4c6'); }
   x.fillStyle = bg;
   x.shadowColor = 'rgba(0,0,0,0.55)'; x.shadowBlur = 14; x.shadowOffsetY = 6;
   x.fill();
@@ -78,13 +79,24 @@ function paintTag(name) {
   // œillet et fil
   x.fillStyle = '#e9c46a'; x.beginPath(); x.arc(320, Y0 + 2, 15, 0, Math.PI * 2); x.fill();
   x.fillStyle = '#5a3a1c'; x.beginPath(); x.arc(320, Y0 + 2, 7, 0, Math.PI * 2); x.fill();
-  let fs = 122;
+  let fs = drawn ? 96 : 122;
   x.font = `600 ${fs}px Fraunces, Georgia, serif`;
   const w = x.measureText(name).width;
   if (w > 540) { fs *= 540 / w; x.font = `600 ${fs}px Fraunces, Georgia, serif`; }
   x.textAlign = 'center'; x.textBaseline = 'middle';
   x.fillStyle = '#123d2c';
-  x.fillText(name, 320, Y0 + Hh / 2 + 6);
+  x.fillText(name, 320, Y0 + Hh / 2 + (drawn ? -22 : 6));
+  if (drawn) {
+    // petite coche dessinée + « a pioché »
+    x.font = 'italic 600 54px Fraunces, Georgia, serif';
+    const label = 'a pioché';
+    const lw = x.measureText(label).width;
+    const lx = 320 - (lw + 40) / 2;
+    x.strokeStyle = '#b21f35'; x.lineWidth = 7; x.lineCap = 'round'; x.lineJoin = 'round';
+    x.beginPath(); x.moveTo(lx + 2, Y0 + 128); x.lineTo(lx + 13, Y0 + 140); x.lineTo(lx + 32, Y0 + 114); x.stroke();
+    x.fillStyle = '#7a1424'; x.textAlign = 'left';
+    x.fillText(label, lx + 44, Y0 + 128);
+  }
   const t = new CanvasTexture(c);
   t.colorSpace = SRGBColorSpace;
   t.anisotropy = 4;
@@ -131,7 +143,7 @@ function makeLights(positions, colors) {
   return p;
 }
 
-export function createTree({ canvas, people, onPick, sound = {} }) {
+export function createTree({ canvas, people, drawn = [], onPick, sound = {} }) {
   let renderer;
   try {
     renderer = new WebGLRenderer({ canvas, alpha: true, antialias: true, powerPreference: 'high-performance' });
@@ -287,7 +299,8 @@ export function createTree({ canvas, people, onPick, sound = {} }) {
     ball.add(mesh, cap, ring);
     // l'étiquette pend sous la boule (dans l'espace de la boule, d'où la division par BR)
     // l'étiquette passe devant les branches ; elle s'efface quand sa boule tourne derrière le sapin
-    const tag = new Sprite(new SpriteMaterial({ map: paintTag(name), transparent: true, depthWrite: false, depthTest: false }));
+    const tag = new Sprite(new SpriteMaterial({ map: paintTag(name, drawn.includes(name)), transparent: true, depthWrite: false, depthTest: false }));
+    tag.userData.drawn = drawn.includes(name);
     tag.scale.set(0.98 / BR, (0.98 * 220 / 640) / BR, 1);
     tag.position.y = -1 - (0.03 + 0.49 * 220 / 640) / BR;
     tag.center.set(0.5, 0.5);
@@ -473,6 +486,17 @@ export function createTree({ canvas, people, onPick, sound = {} }) {
     stop() { S.running = false; cancelAnimationFrame(S.raf); S.raf = 0; },
     reset,
     pickByName(name) { const b = baubles.find((x) => x.name === name); if (b) pick(b); },
+    // Met à jour les étiquettes « a pioché » sans recréer le sapin.
+    setDrawn(list) {
+      baubles.forEach((b) => {
+        const d = list.includes(b.name);
+        if (b.tag.userData.drawn === d) return;
+        b.tag.userData.drawn = d;
+        b.tag.material.map.dispose();
+        b.tag.material.map = paintTag(b.name, d);
+        b.tag.material.needsUpdate = true;
+      });
+    },
     set holdRender(v) { S.hold = v; },
     advance(seconds) { for (let t = 0; t < seconds; t += 1 / 60) step(1 / 60); renderer.render(scene, camera); },
   };
