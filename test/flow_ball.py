@@ -43,5 +43,7 @@ with sync_playwright() as p:
     pg.click('[data-action="replay"]'); time.sleep(1.5); adv(5); time.sleep(0.3); pg.screenshot(path=f'{OUT}/9-rejouer.png')
     pg.click('#screen-gift .back'); time.sleep(1.2); pg.screenshot(path=f'{OUT}/10-accueil.png')
     print('toile cachée sur l\'accueil:', pg.evaluate('document.querySelector("#gl").hidden'), '| lutin restant:', pg.evaluate('document.querySelectorAll("#elves .sitter").length'))
+    pg.click('#me-btn'); time.sleep(2.5); pg.screenshot(path=f'{OUT}/11-revoir.png')
+    print('revoir : lettres posées', pg.evaluate('document.querySelectorAll("#reveal-name .ch.is-set").length'), '| sceau', pg.evaluate('document.querySelectorAll("#reveal .pawstamp").length'))
     print('erreurs JS :', errs or 'aucune')
     b.close()

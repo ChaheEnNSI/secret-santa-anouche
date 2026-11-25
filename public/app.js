@@ -824,8 +824,6 @@ async function openGift() {
   $('#gift-hint').textContent = 'Lino, le chien de la maison, vient vérifier le prénom.';
   await dogValidate();
   $('#gift-hint').textContent = '';
-  revealName.classList.remove('is-spelling');
-  revealName.textContent = data.target;
 
   // 3. Éclat, prénom en or, feu d'artifice.
   flash.classList.remove('is-on');
@@ -865,10 +863,22 @@ function hopFrames(x0, y0, x1, y1, hops, height, lean) {
   return frames;
 }
 
-// Cases vides (invisibles) posées avant l'entrée de la carte, pour que rien ne bouge ensuite.
-function prepareLetters(word) {
+// Lettre en or massif : huit couches empilées en profondeur donnent l'épaisseur, la face avant est polie, un reflet passe dessus.
+const LAYERS = 8;
+function letter3D(ch) {
+  let html = '<span class="ch__3d" aria-hidden="true">';
+  for (let i = LAYERS; i >= 1; i--) {
+    const k = (i - 1) / (LAYERS - 1);
+    const c = [196 - 89 * k, 145 - 71 * k, 46 - 28 * k].map(Math.round);
+    html += `<i class="s" style="--i:${i};color:rgb(${c})">${ch}</i>`;
+  }
+  return `${html}<i class="f" style="--i:0">${ch}</i><i class="sh">${ch}</i></span>`;
+}
+// Emplacements du prénom : un tiret doré par lettre tant qu'elle n'est pas posée (set = toutes déjà posées).
+function prepareLetters(word, set = false) {
+  const esc = (c) => c.replace(/[<>&"]/g, '');
   revealName.classList.add('is-spelling');
-  revealName.innerHTML = [...word].map((c) => `<span class="ch">${c.replace(/[<>&]/g, '')}</span>`).join('');
+  revealName.innerHTML = `<span class="ch-sr">${esc(word)}</span>${[...word].map((c, i) => `<span class="ch${set ? ' is-set' : ''}" data-ch="${esc(c)}" style="--d:${(i * 0.16).toFixed(2)}s" aria-hidden="true"><span class="ch__ghost">${esc(c)}</span>${letter3D(esc(c))}</span>`).join('')}`;
 }
 
 // Trajectoire en cloche entre deux points, avec rotation progressive.
@@ -881,12 +891,15 @@ function arcFrames(x0, y0, x1, y1, lift, r0, r1, n = 14) {
   return f;
 }
 
-// Lettre plantée dans sa case : note de clochette, onde au pied de la lettre, la carte encaisse le choc.
-function impactFx(x, y, i) {
-  sound.note(i + 2);
+// Lettre plantée dans sa case : cloche et tintement de métal, gerbe d'étincelles, onde au pied de la lettre,
+// la carte encaisse le choc et les lettres déjà posées sursautent de proche en proche.
+function impactFx(x, y, note, spans, idx) {
+  sound.note(note + 2);
   sound.thump(0);
+  sound.sweep('sine', 3300, 2500, 0.06, 0.05);
   navigator.vibrate?.(10);
-  overlay.sparkle(x, y - 22, 12, 24);
+  overlay.sparkle(x, y - 24, 22, 30);
+  overlay.sparkle(x, y - 4, 8, 44);
   const ring = document.createElement('i');
   ring.className = 'impact-ring';
   ring.style.setProperty('--x', `${x}px`);
@@ -894,6 +907,10 @@ function impactFx(x, y, i) {
   elvesBox.append(ring);
   ring.addEventListener('animationend', () => ring.remove(), { once: true });
   reveal.animate([{ translate: '0 0' }, { translate: '0 5px' }, { translate: '0 0' }], { duration: 170, easing: 'ease-out' });
+  spans.forEach((sp, j) => {
+    if (j === idx || !sp.classList.contains('is-placed')) return;
+    sp.animate([{ translate: '0 0' }, { translate: '0 -6px' }, { translate: '0 0' }], { duration: 280, delay: Math.abs(j - idx) * 55, easing: 'ease-out' });
+  });
 }
 
 // Chaque lutin arrive en vol plané, debout sur sa lettre, la plante dans sa case et repart en salto de l'autre côté.
@@ -913,7 +930,8 @@ function deliverLetters() {
       const base = 'elf elf--big rider';
       const elf = makeElf(i % 2, 'elf--big rider is-flailing');
       elf.style.setProperty('--fs', `${fs}px`);
-      elf.insertAdjacentHTML('afterbegin', `<span class="elf__board">${span.textContent}</span>`);
+      const ch = span.dataset.ch;
+      elf.insertAdjacentHTML('afterbegin', `<span class="elf__board"><span class="ch__ghost">${ch}</span>${letter3D(ch)}</span>`);
       elvesBox.append(elf);
       const board = elf.querySelector('.elf__board');
       const svg = elf.querySelector('.elf__svg');
@@ -926,19 +944,19 @@ function deliverLetters() {
         // 1. Vol plané depuis le bord de l'écran, traînée d'étincelles derrière la lettre.
         sound.sweep('sine', 480, 920, 0.26, 0.028, 0.3);
         [260, 400, 520].forEach((ms) => setTimeout(() => {
-          if (!elf.isConnected) return;
+          if (!board.isConnected) return;
           const b = board.getBoundingClientRect();
           overlay.sparkle(b.left + b.width / 2, b.top + b.height / 2, 4, 10);
         }, ms));
         await elf.animate(arcFrames(sx, sy, ix, iy, rand(50, 90), dir * 18, 0), { duration: 600, easing: 'cubic-bezier(0.35, 0, 0.85, 0.75)', fill: 'forwards' }).finished;
         // 2. Impact : la lettre s'enfonce dans sa case, le lutin s'écrase puis se détend.
-        board.style.visibility = 'hidden';
+        board.remove();
         span.classList.add('is-placed');
         if (crooked) {
           span.classList.add('is-crooked');
           span.animate([{ transform: 'scale(1.5, 0.5)' }, { transform: `rotate(${dir * 15}deg) translateY(5px)` }], { duration: 220, easing: 'ease-out', fill: 'forwards' });
         }
-        impactFx(cx, r.bottom - 8, i);
+        impactFx(cx, r.bottom - 8, i, spans, i);
         squash();
         if (crooked) {
           // La dernière lettre est restée de travers : il la regarde, puis saute dessus pour la redresser.
@@ -948,7 +966,7 @@ function deliverLetters() {
           elf.className = `${base} is-flailing`;
           await elf.animate(arcFrames(ix, iy, ix, iy, 66, 0, 0), { duration: 460, easing: 'linear', fill: 'forwards' }).finished;
           span.animate([{ transform: `rotate(${dir * 15}deg) translateY(5px)` }, { transform: `rotate(${dir * -6}deg)` }, { transform: `rotate(${dir * 3}deg)` }, { transform: 'none' }], { duration: 400, easing: 'ease-out', fill: 'forwards' });
-          impactFx(cx, r.bottom - 8, i + 1);
+          impactFx(cx, r.bottom - 8, i + 1, spans, i);
           squash();
         }
         resolve();
@@ -1092,7 +1110,7 @@ function dogValidate() {
 }
 
 function showResultInstantly(data) {
-  revealName.textContent = data.target;
+  prepareLetters(data.target, true);
   addStamp(false);
   gift.hidden = true;
   reveal.hidden = false;

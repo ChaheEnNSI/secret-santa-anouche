@@ -9,8 +9,8 @@
     "dev": "wrangler dev",
     "deploy": "npm run build && wrangler deploy",
     "preview": "node tools/build-preview.mjs",
-    "deploy:test": "npm run build && wrangler deploy && sh tools/reset-remote.sh",
-    "build": "esbuild client/ball.js --bundle --format=esm --minify --target=es2020 --outfile=public/ball.js --log-level=warning"
+    "build": "esbuild client/ball.js --bundle --format=esm --minify --target=es2020 --outfile=public/ball.js --log-level=warning",
+    "deploy:et-effacer-les-tirages": "npm run build && wrangler deploy && sh tools/reset-remote.sh --confirmer"
   },
   "devDependencies": {
     "@fontsource-variable/dm-sans": "^5.3.0",
