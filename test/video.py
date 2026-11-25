@@ -7,7 +7,7 @@ OUT = sys.argv[1] if len(sys.argv) > 1 else '/tmp/video'
 os.makedirs(OUT, exist_ok=True)
 
 with sync_playwright() as p:
-    browser = p.chromium.launch(executable_path='/usr/bin/google-chrome', args=['--no-proxy-server', '--enable-gpu-rasterization', '--ignore-gpu-blocklist'])
+    browser = p.chromium.launch(executable_path='/usr/bin/google-chrome', args=['--no-proxy-server', '--use-gl=angle', '--use-angle=swiftshader', '--enable-unsafe-swiftshader', '--ignore-gpu-blocklist'])
     ctx = browser.new_context(
         viewport={'width': 390, 'height': 844}, device_scale_factor=float(os.environ.get('DSF', '1')), is_mobile=True, has_touch=True,
         locale='fr-FR',

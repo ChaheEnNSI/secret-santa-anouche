@@ -7,13 +7,16 @@
   "scripts": {
     "test": "node test/draw.test.mjs",
     "dev": "wrangler dev",
-    "deploy": "wrangler deploy",
+    "deploy": "npm run build && wrangler deploy",
     "preview": "node tools/build-preview.mjs",
-    "deploy:test": "wrangler deploy && sh tools/reset-remote.sh"
+    "deploy:test": "npm run build && wrangler deploy && sh tools/reset-remote.sh",
+    "build": "esbuild client/ball.js --bundle --format=esm --minify --target=es2020 --outfile=public/ball.js --log-level=warning"
   },
   "devDependencies": {
     "@fontsource-variable/dm-sans": "^5.3.0",
     "@fontsource-variable/fraunces": "^5.3.0",
+    "esbuild": "^0.28.2",
+    "three": "^0.187.0",
     "wrangler": "^4.168.0"
   },
   "type": "module",

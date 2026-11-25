@@ -465,6 +465,44 @@ export const sound = (() => {
       const scale = [523.3, 587.3, 659.3, 784, 880, 1046.5, 1174.7, 1318.5, 1568, 1760];
       bell(ctx.currentTime + 0.01, scale[i % scale.length], 1.4, 0.09);
     },
+    // --- Verre ---
+    crack(level = 1) { // coup sec sur le verre + petits tintements
+      if (!ready()) return;
+      const t = ctx.currentTime;
+      const src = noise(0.07);
+      const f = ctx.createBiquadFilter();
+      f.type = 'highpass'; f.frequency.value = 2600;
+      const g = ctx.createGain();
+      g.gain.setValueAtTime(0.22 + level * 0.02, t);
+      g.gain.exponentialRampToValueAtTime(0.0001, t + 0.07);
+      src.connect(f).connect(g).connect(ctx.destination);
+      src.start(t);
+      for (let i = 0; i < 3 + Math.min(4, level); i++) {
+        const d = Math.random() * 0.14;
+        const freq = 2300 + Math.random() * 4200;
+        this.sweep('sine', freq, freq * 0.98, 0.05 + Math.random() * 0.09, 0.035, d);
+      }
+      this.sweep('sine', 150 + level * 10, 60, 0.16, 0.16);
+    },
+    shatter() { // la boule éclate : souffle, pluie de tintements, coup sourd
+      if (!ready()) return;
+      const t = ctx.currentTime;
+      const src = noise(0.7);
+      const f = ctx.createBiquadFilter();
+      f.type = 'highpass'; f.frequency.value = 1700;
+      const g = ctx.createGain();
+      g.gain.setValueAtTime(0.42, t);
+      g.gain.exponentialRampToValueAtTime(0.05, t + 0.12);
+      g.gain.exponentialRampToValueAtTime(0.0001, t + 0.7);
+      src.connect(f).connect(g).connect(ctx.destination);
+      src.start(t);
+      for (let i = 0; i < 26; i++) {
+        const d = Math.random() ** 1.7 * 1.3;
+        const freq = 1700 + Math.random() * 5600;
+        this.sweep('sine', freq, freq * (0.96 + Math.random() * 0.06), 0.06 + Math.random() * 0.3, 0.05 * (1 - d / 1.6), d);
+      }
+      this.sweep('sine', 120, 38, 0.5, 0.34);
+    },
     // --- Bruitages des lutins ---
     sweep(type, f0, f1, dur, vol, delay = 0) { // glissando simple
       if (!ready()) return;

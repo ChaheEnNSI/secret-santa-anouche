@@ -47,6 +47,11 @@ const state = { people: [], event: null, selected: null, reveal: null, opening: 
 const screens = { home: $('#screen-home'), question: $('#screen-question'), gift: $('#screen-gift') };
 let current = 'home';
 
+function leaveGift() {
+  ball?.stop();
+  if (sitter && sitter.parentNode === elvesBox) removeSitter();
+}
+
 function show(name, { push = true, animate = true } = {}) {
   if (name === current && !screens[name].hidden) return;
   Object.entries(screens).forEach(([key, el]) => { el.hidden = key !== name; });
@@ -57,6 +62,7 @@ function show(name, { push = true, animate = true } = {}) {
   if (push) { try { history.pushState({ screen: name }, ''); } catch { /* cadre restreint */ } }
   current = name;
   if (name === 'gift') startGiftLoop();
+  else leaveGift();
 }
 
 window.addEventListener('popstate', (e) => {
@@ -160,8 +166,8 @@ function renderMe() {
   if (mine) {
     $('#me-name').textContent = name;
     const done = store.get('revealed') === '1';
-    $('#me-text').textContent = done ? 'Tu as déjà pioché. Un téléphone, un seul tirage.' : 'Ton cadeau t\'attend.';
-    $('#me-btn').textContent = done ? 'Revoir qui j\'ai pioché' : 'Ouvrir mon cadeau';
+    $('#me-text').textContent = done ? 'Tu as déjà pioché. Un téléphone, un seul tirage.' : 'Ton tirage t\'attend.';
+    $('#me-btn').textContent = done ? 'Revoir qui j\'ai pioché' : 'Découvrir mon tirage';
   }
 }
 $('#me-btn').addEventListener('click', () => openGiftScreen());
@@ -446,6 +452,7 @@ async function selectName(name, tagEl) {
   state.selected = name;
   if (store.get('token') && store.get('name') === name) { openGiftScreen(); return; }
   if (store.get('token')) { renderMe(); return; }
+  setTimeout(loadBall, 700); // la boule 3D se prépare pendant le contrôle d'identité
   const qName = $('#q-name');
   qName.textContent = name;
   resetCheck(name);
@@ -479,6 +486,26 @@ const spin = {
   taps: 0, needed: 6, tapAt: -9999, lift: 0, charge: 0, prefetch: null,
 };
 const TAP_LINES = ['Il s\'accroche !', 'Il tient bon…', 'Encore !', 'Il glisse…', 'Il perd l\'équilibre…', 'Presque !', 'Dernier coup !'];
+const BALL_LINES = ['Le verre se fend…', 'Encore !', 'Ça craque de partout…', 'La lumière s\'échappe…', 'Elle va céder…', 'Presque !', 'Dernier coup !'];
+
+// Boule de Noël en 3D temps réel. Si le téléphone ne sait pas l'afficher, on garde la boîte cadeau.
+let ball = null;
+let ballLoading = null;
+const glCanvas = $('#gl');
+function ballAnchor() {
+  const r = gift.getBoundingClientRect();
+  if (!r.width) return null;
+  return { x: r.left + r.width / 2, y: r.top + 178, r: Math.min(112, r.width * 0.38) };
+}
+function loadBall() {
+  if (reduceMotion) return Promise.resolve(null);
+  ballLoading ||= import('./ball.js')
+    .then((m) => { ball = m.createBall({ canvas: glCanvas, anchor: ballAnchor }); return ball; })
+    .catch(() => null);
+  return ballLoading;
+}
+const ballMode = () => !!ball && gift.classList.contains('is-gl');
+window.__santa = { get ball() { return ball; } }; // pour les essais automatiques
 // Lutin têtu installé sur le couvercle : c'est lui qui empêche le cadeau de s'ouvrir.
 let sitter = null;
 function placeSitter() {
@@ -486,7 +513,11 @@ function placeSitter() {
   sitter = null;
   if (reduceMotion) return;
   sitter = makeElf(1, 'sitter pose-cross is-tapping');
-  gift.append(sitter);
+  if (ballMode()) { sitter.classList.add('sitter--ball'); sitter.style.opacity = 0; elvesBox.append(sitter); } else gift.append(sitter);
+}
+function removeSitter() {
+  sitter?.remove();
+  sitter = null;
 }
 function launchSitter() {
   if (!sitter) return;
@@ -510,6 +541,19 @@ function launchSitter() {
 function giftLoop(now) {
   if (current !== 'gift' || gift.hidden) { spin.raf = 0; return; }
   const t = (now - spin.t0) / 1000;
+  if (ballMode()) {
+    if (sitter) {
+      const c = ball.capTop();
+      const d = now - spin.tapAt;
+      const hop = d < 420 ? -Math.sin((Math.PI * d) / 420) * (10 + spin.taps * 2) : 0;
+      const lean = c.rot + spin.charge * Math.sin(t * 6.5) * 9;
+      sitter.style.transform = `translate(${(c.x - 30).toFixed(1)}px, ${(c.y - 60 + hop).toFixed(1)}px) rotate(${lean.toFixed(1)}deg)`;
+      sitter.style.opacity = 1;
+    }
+    ball.setShaking(spin.shaking);
+    spin.raf = requestAnimationFrame(giftLoop);
+    return;
+  }
   if (!spin.dragging) {
     spin.ry += spin.vel;
     spin.vel *= 0.93;
@@ -573,6 +617,7 @@ gift.addEventListener('pointerdown', (e) => {
   spin.lastX = e.clientX;
   spin.moved = 0;
   spin.vel = 0;
+  if (ballMode()) ball.setDragging(true);
   gift.classList.add('is-dragging');
   gift.setPointerCapture?.(e.pointerId);
   sound.unlock();
@@ -584,14 +629,16 @@ gift.addEventListener('pointermove', (e) => {
   spin.moved += Math.abs(dx);
   spin.ry += dx * 0.7;
   spin.vel = dx * 0.7;
+  if (ballMode() && spin.moved >= 8) ball.spinBy(dx);
 });
 function endDrag() {
   if (!spin.dragging) return false;
   spin.dragging = false;
+  if (ballMode()) ball.setDragging(false);
   gift.classList.remove('is-dragging');
   return true;
 }
-gift.addEventListener('pointerup', () => { if (endDrag() && spin.moved < 8) tapGift(); });
+gift.addEventListener('pointerup', (e) => { if (endDrag() && spin.moved < 8) tapGift(e); });
 gift.addEventListener('pointercancel', endDrag);
 gift.addEventListener('click', (e) => { if (e.detail === 0) tapGift(); }); // clavier
 
@@ -599,7 +646,7 @@ function renderTapDots() {
   $('#taps').innerHTML = Array.from({ length: spin.needed }, (_, i) => `<i class="${i < spin.taps ? 'is-on' : ''}"></i>`).join('');
 }
 
-function tapGift() {
+function tapGift(e) {
   if (state.opening || gift.classList.contains('is-open')) return;
   sound.unlock();
   spin.taps += 1;
@@ -610,11 +657,13 @@ function tapGift() {
   stage.style.setProperty('--charge', spin.charge.toFixed(2));
   if (spin.taps === 1 && !state.reveal) spin.prefetch = api('reveal', { method: 'POST' }).catch((err) => err);
   renderTapDots();
+  if (ballMode()) { tapBall(e); return; }
   sound.thump(spin.taps);
   if (sitter) {
-    sitter.className = 'elf sitter is-shocked is-flailing';
+    const base = `elf sitter${ballMode() ? ' sitter--ball' : ''}`;
+    sitter.className = `${base} is-shocked is-flailing`;
     clearTimeout(sitter.t);
-    sitter.t = setTimeout(() => { if (sitter) sitter.className = `elf sitter pose-cross${spin.taps >= spin.needed - 2 ? ' is-shifty' : ' is-tapping'}`; }, 520);
+    sitter.t = setTimeout(() => { if (sitter) sitter.className = `${base} pose-cross${spin.taps >= spin.needed - 2 ? ' is-shifty' : ' is-tapping'}`; }, 520);
     if (spin.taps === 2) sound.squeak();
   }
   navigator.vibrate?.(12 + spin.taps * 5);
@@ -631,6 +680,28 @@ function tapGift() {
   hint.textContent = spin.taps === 1 ? (sitter ? 'Un lutin s\'est installé dessus. Tape plusieurs fois pour le déloger.' : 'Il résiste ! Tape plusieurs fois pour le forcer.') : TAP_LINES[(spin.taps - 2) % TAP_LINES.length];
 }
 
+// Coup sur la boule : fissures à l'endroit touché, éclats, lumière qui s'échappe.
+function tapBall(e) {
+  const g = gift.getBoundingClientRect();
+  const x = e?.clientX ?? g.left + g.width / 2 + rand(-40, 40);
+  const y = e?.clientY ?? g.top + 178 + rand(-40, 40);
+  const last = spin.taps >= spin.needed;
+  const hit = ball.tap(x, y, spin.charge, last) || { x, y };
+  sound.crack(spin.taps);
+  navigator.vibrate?.(last ? [20, 30, 40] : 10 + spin.taps * 4);
+  overlay.sparkle(hit.x, hit.y, 8 + spin.taps * 3, 30 + spin.taps * 5);
+  if (sitter) {
+    sitter.className = 'elf sitter sitter--ball is-shocked is-flailing';
+    clearTimeout(sitter.t);
+    sitter.t = setTimeout(() => { if (sitter) sitter.className = `elf sitter sitter--ball pose-cross${spin.taps >= spin.needed - 2 ? ' is-shifty' : ' is-tapping'}`; }, 520);
+    if (spin.taps === 2) sound.squeak();
+  }
+  if (spin.taps > spin.needed / 2) stage.animate([{ transform: 'translate(0,0)' }, { transform: 'translate(-3px,1px)' }, { transform: 'translate(3px,-1px)' }, { transform: 'translate(0,0)' }], { duration: 160 });
+  const hint = $('#gift-hint');
+  if (last) { hint.textContent = ''; spin.shaking = true; setTimeout(openGift, 320); return; }
+  hint.textContent = spin.taps === 1 ? (sitter ? 'Fissurée ! Un lutin s\'y accroche. Tape encore pour la briser.' : 'Fissurée ! Tape encore pour la briser.') : BALL_LINES[(spin.taps - 2) % BALL_LINES.length];
+}
+
 function resetGift() {
   gift.hidden = false;
   gift.classList.remove('is-open', 'is-gone', 'is-dragging');
@@ -640,9 +711,13 @@ function resetGift() {
   reveal.classList.remove('is-in', 'is-named', 'is-tilting');
   revealName.textContent = '';
   after.hidden = true;
-  $('#gift-title').textContent = 'Ton cadeau t\'attend';
+  gift.classList.toggle('is-gl', !!ball);
+  stage.classList.toggle('is-gl', !!ball);
+  gift.setAttribute('aria-label', ball ? 'Briser la boule de Noël' : 'Ouvrir le cadeau');
+  $('#gift-title').textContent = ball ? 'Ton tirage est à l\'intérieur' : 'Ton cadeau t\'attend';
   $('#gift-hint').hidden = false;
-  $('#gift-hint').textContent = 'Fais-le tourner du doigt, puis touche-le pour l\'ouvrir.';
+  $('#gift-hint').textContent = ball ? 'Fais-la tourner du doigt, puis tape dessus pour la briser.' : 'Fais-le tourner du doigt, puis touche-le pour l\'ouvrir.';
+  if (ball) { ball.reset(); ball.start(); }
   Object.assign(spin, { ry: -28, vel: 0, shaking: false, taps: 0, needed: 5 + Math.floor(Math.random() * 4), tapAt: -9999, lift: 0, charge: 0, prefetch: null });
   renderTapDots();
   placeSitter();
@@ -650,16 +725,23 @@ function resetGift() {
 }
 
 async function openGiftScreen() {
+  const seen = store.get('revealed') === '1';
+  // La boule 3D se charge pendant le contrôle d'identité ; on lui laisse un court délai si besoin.
+  if (!seen && !ball) await Promise.race([loadBall(), wait(2500)]);
   resetGift();
   show('gift');
   startGiftLoop();
-  if (store.get('revealed') === '1') {
+  if (seen) {
+    loadBall(); // prête si la personne veut revoir la scène
+    ball?.stop();
+    removeSitter();
     try { state.reveal = await api('reveal', { method: 'POST' }); showResultInstantly(state.reveal); } catch (err) { handleRevealError(err); }
   }
 }
 
 function handleRevealError(err) {
   spin.shaking = false;
+  ball?.setShaking(false);
   state.opening = false;
   if (err.status === 401) { store.del('token'); store.del('name'); store.del('revealed'); goHome(); return; }
   $('#gift-hint').textContent = err.message;
@@ -682,18 +764,34 @@ async function openGift() {
 
   if (reduceMotion) { showResultInstantly(data); return; }
 
-  // 1. Le lutin est éjecté, le couvercle s'envole, la lumière jaillit.
-  launchSitter();
-  gift.classList.add('is-open');
-  stage.classList.add('is-opened');
-  sound.whoosh();
-  navigator.vibrate?.(40);
-  const g = gift.getBoundingClientRect();
-  const ox = g.left + g.width / 2;
-  const oy = g.top + 118;
-  overlay.sparkle(ox, oy, 60, 80);
-  overlay.burst(ox, oy, 60, 0.7);
-  await wait(450);
+  if (ballMode()) {
+    // 1. La boule éclate : le lutin est projeté, les morceaux volent, la poussière d'or reste en l'air.
+    launchSitter();
+    const c = ball.center();
+    gift.classList.add('is-open');
+    stage.classList.add('is-opened');
+    flash.classList.remove('is-on');
+    void flash.offsetWidth;
+    flash.classList.add('is-on');
+    sound.shatter();
+    navigator.vibrate?.([30, 40, 80]);
+    ball.shatter();
+    overlay.sparkle(c.x, c.y, 50, 120);
+    await wait(1250);
+  } else {
+    // 1. Le lutin est éjecté, le couvercle s'envole, la lumière jaillit.
+    launchSitter();
+    gift.classList.add('is-open');
+    stage.classList.add('is-opened');
+    sound.whoosh();
+    navigator.vibrate?.(40);
+    const g = gift.getBoundingClientRect();
+    const ox = g.left + g.width / 2;
+    const oy = g.top + 118;
+    overlay.sparkle(ox, oy, 60, 80);
+    overlay.burst(ox, oy, 60, 0.7);
+    await wait(450);
+  }
 
   // 2. La carte se redresse, puis les lutins apportent les lettres une à une.
   prepareLetters(data.target);
@@ -897,10 +995,13 @@ document.addEventListener('click', (e) => {
   if (action === 'home') goHome();
   if (action === 'replay') {
     const data = state.reveal;
-    resetGift();
-    state.reveal = data;
-    startGiftLoop();
-    window.scrollTo({ top: 0, behavior: reduceMotion ? 'auto' : 'smooth' });
+    Promise.race([loadBall(), wait(2500)]).then(() => {
+      if (current !== 'gift') return;
+      resetGift();
+      state.reveal = data;
+      startGiftLoop();
+      window.scrollTo({ top: 0, behavior: reduceMotion ? 'auto' : 'smooth' });
+    });
   }
 });
 
@@ -955,4 +1056,5 @@ async function doPeek() {
     $('#progress').textContent = err.message;
   }
   schedulePeek(4500);
+  if (store.get('token')) loadBall();
 })();
