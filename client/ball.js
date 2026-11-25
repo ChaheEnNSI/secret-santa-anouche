@@ -504,16 +504,25 @@ export function createBall({ canvas, anchor }) {
   }
 
   // Si le téléphone peine, on baisse la définition plutôt que de saccader.
-  let pr = dpr, slowAvg = 0.016, frames = 0;
+  // Si la baisse ne change rien, la lenteur vient d'ailleurs : on rend la pleine définition.
+  let pr = dpr, slowAvg = 0.016, frames = 0, tune = dpr > 1 ? 'measure' : 'off', before = 0;
+  function setRatio(v) {
+    pr = v;
+    renderer.setPixelRatio(pr);
+    renderer.setSize(S.W, S.H, false);
+    dust.mat.uniforms.uScale.value = pr;
+  }
   function watchSpeed(raw) {
+    if (tune === 'off') return;
     frames++;
     slowAvg += (Math.min(0.2, raw) - slowAvg) * 0.08;
-    if (frames > 45 && slowAvg > 0.03 && pr > 1) {
-      pr = Math.max(1, pr * 0.7);
-      renderer.setPixelRatio(pr);
-      renderer.setSize(S.W, S.H, false);
-      dust.mat.uniforms.uScale.value = pr;
-      frames = 0; slowAvg = 0.02;
+    if (tune === 'measure') {
+      if (frames < 45) return;
+      if (slowAvg > 0.03) { before = slowAvg; setRatio(Math.max(1, dpr * 0.7)); tune = 'check'; frames = 0; slowAvg = before * 0.6; }
+      else if (frames > 240) tune = 'off';
+    } else if (frames >= 70) {
+      if (slowAvg > before * 0.85) setRatio(dpr);
+      tune = 'off';
     }
   }
 
